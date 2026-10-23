@@ -17,8 +17,8 @@ web search, and a persistent memory it maintains about you.
   [config/jarvis-voice-assistant-system-prompt.md](config/jarvis-voice-assistant-system-prompt.md).
   Edit it freely; no code changes needed.
 
-Brain: Anthropic's `claude-fable-5`. TTS is pluggable: Piper (local, free,
-default), ElevenLabs, or OpenAI.
+Brain: Claude (set `LLM_MODEL` in `.env`). TTS is pluggable: Piper (local,
+free, default, with a voice per mood), ElevenLabs, or OpenAI.
 
 ---
 
@@ -73,13 +73,88 @@ works identically. Try: *"add a task to buy milk tomorrow evening"*, then
 *"what's on my task list?"*. Confirmations arrive as a `[CONFIRM] ... [yes/no]:`
 prompt. This is the fastest way to test changes to the system prompt or tools.
 
-There's also a browser chat UI over the same brain:
+## 4b. The HUD (recommended)
+
+A full-screen, Iron Man–style interface over the same brain: an animated
+reactor that orbits, spirals and pulses as Jarvis listens, thinks and
+speaks, with live panels for your agenda, tasks, timers, reminders, inbox,
+system vitals and memories.
+
+Build the front-end once (needs Node 18+):
 
 ```bash
-python -m jarvis web        # then open http://127.0.0.1:8765
+cd frontend && npm install && npm run build && cd ..
 ```
 
-Confirmations appear as a browser dialog; reminders pop in as notices.
+Then run it and open <http://127.0.0.1:8765> in Chrome, Edge or Safari:
+
+```bash
+python -m jarvis web
+```
+
+Click **Bring Jarvis online** (browsers need one click before a page may
+use the mic and speakers) and allow microphone access. From then on:
+
+- Say **"Hey Jarvis"**, then your request. The wake word, turn-taking and
+  Whisper transcription all run in the Python server on this Mac; the
+  browser only streams mic audio to it over localhost.
+- **Take your time.** A pause doesn't end your turn: Jarvis transcribes
+  what you've said so far and, if it sounds unfinished ("turn off the
+  lights in the…"), keeps listening; "hold on" or "let me think" buys more
+  time. You'll see what it's hearing live, with a bar showing how long it
+  will wait. Choose Snappy, Balanced or Patient in settings, or just say
+  "give me more time to think".
+- **Talk over it** to interrupt, like with a person; it stops and listens.
+  Replies start speaking after the first sentence, and Jarvis says a
+  short "one moment" while slow tools run.
+- **Moods**: Classic, Calm, Focused, Upbeat and Night each have their own
+  voice, pace and style. Pick one from the top bar, or say "switch to calm
+  mode". You can also pick any installed voice, or let Jarvis choose a
+  mood from how you sound.
+- Press **Space** / tap the reactor to talk without the wake word,
+  **Esc** to interrupt, **/** to type, **⌘K** for the command palette
+  (moods, voices, themes, settings, or type anything to ask).
+- Jarvis can put **cards** on screen (lists, numbers, headlines) and
+  control the interface by voice: "show my history", "switch to orb mode",
+  "clear the cards", "mute the mic".
+- Confirmations appear as an on-screen alert and are spoken; answer by
+  voice, by typing yes/no, or with the buttons.
+- Panels include a now-playing widget for Music/Spotify with a volume
+  slider. Conversation history (clock icon) survives restarts.
+
+## 4c. The Mac app (⌘J from anywhere)
+
+`desktop/` wraps the HUD in a small Electron app: no browser tab, no
+"Bring Jarvis online" click, and it starts the Python server itself (or
+uses one already running).
+
+```bash
+cd desktop && npm install && npm run pack
+```
+
+That builds `Jarvis.app`, installs it into `~/Applications` and signs it
+for this Mac. Open it from Spotlight. Then:
+
+- **⌘J** anywhere: Jarvis appears and listens (or stops talking).
+- **⌘⇧J**: switch between the full interface and a small floating orb
+  that stays on top of your other windows without taking focus.
+- Menu-bar icon: talk, show, orb/full, **Launch at login**, server log, quit.
+  Closing the window keeps Jarvis listening in the menu bar.
+
+The first launch asks for the microphone, and macOS may ask to let Jarvis
+use files in iCloud Drive (where this project lives): allow both. ⌘J
+replaces that shortcut in other apps (e.g. Chrome's Downloads) while Jarvis
+runs. Server logs go to `~/Library/Logs/Jarvis/server.log`. For development,
+`cd desktop && npm start` runs it without packaging.
+
+Front-end development with hot reload: run `python -m jarvis web` and, in
+another terminal, `cd frontend && npm run dev`, then open
+<http://localhost:5173>.
+
+> The project lives in iCloud Drive, so the virtualenv and `node_modules`
+> are kept in `.venv.nosync` and `frontend/node_modules.nosync` (iCloud
+> skips `.nosync` names) behind `.venv` / `node_modules` symlinks. Keep it
+> that way: iCloud evicting packages makes Python hang on import.
 
 ## 5. Google — Gmail and Calendar (optional but recommended)
 
@@ -142,6 +217,14 @@ allow it (System Settings → Privacy & Security → Microphone).
 
 Things to try:
 
+- "Good morning" → a spoken briefing: weather, agenda, mail, tasks.
+- "Set a ten minute timer for the pasta."
+- "Play some music" / "skip this song" / "set the volume to 30."
+- "Open Safari and go to the BBC." / "Take a screenshot."
+- "Find my resume and summarize it."
+- "What's in the news about SpaceX?" / "Read this page: <url>"
+- "Run my Good Night shortcut."
+
 - "What's on my calendar this week?"
 - "Search my email for anything from the university."
 - "Draft a reply saying I'll be there." → "Okay, send it." *(asks you to confirm out loud)*
@@ -185,8 +268,10 @@ python tests/smoke_test.py
 ```
 
 Runs offline (fake model, fake Gmail): exercises tasks, reminders, memory,
-web search, and proves the confirmation gate blocks unconfirmed sends —
-including a simulated model that tries to set the confirmation flag itself.
+turn-taking (pausing mid-thought, "let me think", barge-in pre-roll),
+moods and voice-controlled settings, HUD cards, web search, and proves the
+confirmation gate blocks unconfirmed sends — including a simulated model
+that tries to set the confirmation flag itself.
 
 ## Troubleshooting
 
@@ -194,8 +279,13 @@ including a simulated model that tries to set the confirmation flag itself.
 |---|---|
 | Wake word never triggers | Lower `WAKE_THRESHOLD` (e.g. 0.4); check mic permission. |
 | Triggers on random speech | Raise `WAKE_THRESHOLD` (e.g. 0.6). |
-| Cuts you off mid-sentence | Raise `SILENCE_DURATION`. |
+| Cuts you off mid-sentence | Say "give me more time to think" (or Settings → Listening → Patient). |
+| Jarvis interrupts itself | Its own voice is reaching the mic: use headphones, or turn off "Stop talking when I interrupt". |
+| App stuck on "Starting the Jarvis server" | Look for a macOS prompt about iCloud Drive access and allow it; check `~/Library/Logs/Jarvis/server.log`. |
 | Slow transcription | Use `WHISPER_MODEL=tiny.en`, or `STT_PROVIDER=openai`. |
 | "piper CLI not found" | `pip install piper-tts` inside the venv, and download a voice (step 6). |
 | Google tool errors | Re-run `python -m jarvis setup-google`. |
 | Slow replies | Keep `LLM_EFFORT=low`; raise to `medium`/`high` for harder questions. |
+| HUD says "Microphone blocked" | Allow the mic for `127.0.0.1` in the browser's site settings, then toggle the mic button. |
+| Mac control asks for permission | macOS asks once per app the first time Jarvis controls Music/Spotify etc. (System Settings → Privacy & Security → Automation). Allow it for your terminal/Python. |
+| "You've hit your monthly spend limit" | Your Claude plan's usage limit for that model; set `LLM_MODEL` to another model in `.env` or wait for the reset. |

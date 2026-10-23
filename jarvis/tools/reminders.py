@@ -78,3 +78,12 @@ def start_scheduler(notify):
     t = threading.Thread(target=loop, daemon=True, name="reminder-scheduler")
     t.start()
     return t
+
+
+def rows():
+    with connect() as conn:
+        return [
+            dict(r) for r in conn.execute(
+                "SELECT * FROM reminders WHERE fired = 0 ORDER BY due_at"
+            ).fetchall()
+        ]

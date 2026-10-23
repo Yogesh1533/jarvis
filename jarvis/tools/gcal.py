@@ -112,3 +112,31 @@ def delete_event(event_id, _confirmed=False):
         sendUpdates="all" if others else "none",
     ).execute()
     return "Event '{}' deleted.".format(event.get("summary", "(no title)"))
+
+
+def events_data(days_ahead=2):
+    """Structured upcoming events for the HUD agenda panel."""
+    svc = _service()
+    now = datetime.now(timezone.utc)
+    resp = svc.events().list(
+        calendarId="primary",
+        timeMin=(now - timedelta(hours=2)).isoformat(),
+        timeMax=(now + timedelta(days=int(days_ahead))).isoformat(),
+        singleEvents=True,
+        orderBy="startTime",
+        maxResults=20,
+    ).execute()
+    out = []
+    for e in resp.get("items", []):
+        start, end = e.get("start", {}), e.get("end", {})
+        out.append({
+            "id": e.get("id"),
+            "title": e.get("summary", "(no title)"),
+            "start": start.get("dateTime", start.get("date")),
+            "end": end.get("dateTime", end.get("date")),
+            "all_day": "date" in start,
+            "location": e.get("location"),
+            "attendees": len(_other_attendees(e)),
+            "link": e.get("hangoutLink") or e.get("htmlLink"),
+        })
+    return out

@@ -17,3 +17,6 @@ onnxruntime>=1.16
 faster-whisper>=1.0
 piper-tts>=1.2
 claude-agent-sdk>=0.1
+psutil>=5.9
+pypdf>=4.0
+websockets>=12

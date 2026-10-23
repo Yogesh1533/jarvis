@@ -1,7 +1,6 @@
 """Wake-word detection with openWakeWord — fully local, mic audio never
 leaves the machine."""
 import numpy as np
-import sounddevice as sd
 
 from .. import config
 
@@ -20,9 +19,19 @@ class WakeWordDetector:
             inference_framework="onnx",
         )
 
-    def wait_for_wake(self):
-        """Block until the wake word is heard."""
+    def reset(self):
         self.model.reset()
+
+    def detect(self, chunk):
+        """Feed one 80 ms int16 chunk; True if the wake word just fired."""
+        scores = self.model.predict(chunk)
+        return any(s >= config.WAKE_THRESHOLD for s in scores.values())
+
+    def wait_for_wake(self):
+        """Block until the wake word is heard on the local mic."""
+        import sounddevice as sd
+
+        self.reset()
         with sd.InputStream(
             samplerate=config.SAMPLE_RATE,
             channels=1,
@@ -31,6 +40,5 @@ class WakeWordDetector:
         ) as stream:
             while True:
                 chunk, _ = stream.read(_CHUNK)
-                scores = self.model.predict(np.frombuffer(chunk, dtype=np.int16))
-                if any(s >= config.WAKE_THRESHOLD for s in scores.values()):
+                if self.detect(np.frombuffer(chunk, dtype=np.int16)):
                     return

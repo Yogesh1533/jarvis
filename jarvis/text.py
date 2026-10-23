@@ -1,6 +1,6 @@
 """Text-only chat mode: same brain, no audio stack. For testing and quiet use."""
 from .assistant import Assistant
-from .tools import reminders
+from .tools import reminders, timers
 
 
 def run():
@@ -10,6 +10,7 @@ def run():
 
     assistant = Assistant(confirm=text_confirm)
     reminders.start_scheduler(lambda msg: print("\n[REMINDER] {}".format(msg)))
+    timers.set_notifier(lambda label: print("\n[TIMER] {} is done".format(label)))
 
     print("Jarvis text mode. Type your message; 'quit' to exit.\n")
     while True:

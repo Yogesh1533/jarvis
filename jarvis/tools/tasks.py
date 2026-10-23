@@ -61,3 +61,11 @@ def delete(task_id, _confirmed=False):
             )
         conn.execute("DELETE FROM tasks WHERE id = ?", (task_id,))
     return "Task {} deleted: {}".format(task_id, row["title"])
+
+
+def rows(include_done=False):
+    with connect() as conn:
+        sql = "SELECT * FROM tasks {} ORDER BY done, due IS NULL, due, id".format(
+            "" if include_done else "WHERE done = 0"
+        )
+        return [dict(r) for r in conn.execute(sql).fetchall()]

@@ -25,6 +25,19 @@ def build_system_prompt():
     return text
 
 
+def stamp(user_text):
+    """Prefix the current time (and the active mood's style note) to a user
+    message. Kept out of the system prompt so that stays cacheable."""
+    from . import moods
+
+    note = moods.style_note()
+    return "[{}]{} {}".format(
+        datetime.now().strftime("%A %Y-%m-%d %H:%M"),
+        " [{}]".format(note) if note else "",
+        user_text,
+    )
+
+
 class Assistant:
     """One conversation session.
 
@@ -82,10 +95,7 @@ class Assistant:
         if self.backend is not None:
             return self.backend.chat(user_text)
 
-        stamped = "[{}] {}".format(
-            datetime.now().strftime("%A %Y-%m-%d %H:%M"), user_text
-        )
-        self.messages.append({"role": "user", "content": stamped})
+        self.messages.append({"role": "user", "content": stamp(user_text)})
 
         for _ in range(_MAX_TOOL_ROUNDS):
             response = self._request()

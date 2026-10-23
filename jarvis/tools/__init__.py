@@ -267,13 +267,364 @@ TOOL_SCHEMAS = [
             "required": ["name"],
         },
     },
+    # ── News & web pages ───────────────────────────────────────────
+    {
+        "name": "news_headlines",
+        "description": "Latest news headlines, optionally about a topic (DuckDuckGo News).",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "topic": {"type": "string", "description": "Optional topic; omit for top headlines"},
+                "max_results": {"type": "integer", "description": "Default 6"},
+            },
+        },
+    },
+    {
+        "name": "web_read_page",
+        "description": "Fetch a web page and return its readable text, to summarize or answer questions about it.",
+        "input_schema": {
+            "type": "object",
+            "properties": {"url": {"type": "string", "description": "http(s) URL"}},
+            "required": ["url"],
+        },
+    },
+    # ── Weather ────────────────────────────────────────────────────
+    {
+        "name": "weather_get",
+        "description": (
+            "Current weather and a 3-day forecast. Omit location to use the "
+            "user's home location."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {"location": {"type": "string", "description": "City name"}},
+        },
+    },
+    # ── Timers ─────────────────────────────────────────────────────
+    {
+        "name": "timer_set",
+        "description": "Start a countdown timer. It is announced aloud and shown on the HUD when it ends.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "seconds": {"type": "integer", "description": "Duration in seconds"},
+                "label": {"type": "string", "description": "e.g. 'pasta'"},
+            },
+            "required": ["seconds"],
+        },
+    },
+    {
+        "name": "timer_list",
+        "description": "List running timers with time remaining.",
+        "input_schema": {"type": "object", "properties": {}},
+    },
+    {
+        "name": "timer_cancel",
+        "description": "Cancel a running timer by id.",
+        "input_schema": {
+            "type": "object",
+            "properties": {"timer_id": {"type": "integer"}},
+            "required": ["timer_id"],
+        },
+    },
+    # ── Briefing & system ──────────────────────────────────────────
+    {
+        "name": "briefing_get",
+        "description": (
+            "Gather a daily briefing in one call: weather, today's calendar, "
+            "open tasks, pending reminders and unread email. Use for 'good "
+            "morning', 'brief me', 'what's my day look like'."
+        ),
+        "input_schema": {"type": "object", "properties": {}},
+    },
+    {
+        "name": "system_status",
+        "description": "This Mac's battery, CPU, memory, disk, volume and uptime.",
+        "input_schema": {"type": "object", "properties": {}},
+    },
+    # ── Mac control ────────────────────────────────────────────────
+    {
+        "name": "mac_open_app",
+        "description": "Open (or bring to front) a Mac application by name, e.g. 'Safari', 'Spotify'.",
+        "input_schema": {
+            "type": "object",
+            "properties": {"name": {"type": "string"}},
+            "required": ["name"],
+        },
+    },
+    {
+        "name": "mac_quit_app",
+        "description": "Quit a Mac application. REQUIRES the user's confirmation (unsaved work may be lost).",
+        "input_schema": {
+            "type": "object",
+            "properties": {"name": {"type": "string"}},
+            "required": ["name"],
+        },
+    },
+    {
+        "name": "mac_open_url",
+        "description": "Open a web page in the default browser.",
+        "input_schema": {
+            "type": "object",
+            "properties": {"url": {"type": "string", "description": "http(s) URL"}},
+            "required": ["url"],
+        },
+    },
+    {
+        "name": "mac_set_volume",
+        "description": "Set the Mac's output volume, 0-100 (0 mutes).",
+        "input_schema": {
+            "type": "object",
+            "properties": {"level": {"type": "integer"}},
+            "required": ["level"],
+        },
+    },
+    {
+        "name": "mac_media",
+        "description": "Control music playback in Spotify or Apple Music.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "action": {
+                    "type": "string",
+                    "enum": ["play", "pause", "playpause", "next", "previous"],
+                },
+                "app": {
+                    "type": "string",
+                    "enum": ["Spotify", "Music"],
+                    "description": "Default: whichever is running",
+                },
+            },
+            "required": ["action"],
+        },
+    },
+    {
+        "name": "mac_now_playing",
+        "description": "What's currently playing in Spotify or Apple Music.",
+        "input_schema": {"type": "object", "properties": {}},
+    },
+    {
+        "name": "mac_notify",
+        "description": "Show a macOS notification banner.",
+        "input_schema": {
+            "type": "object",
+            "properties": {"title": {"type": "string"}, "message": {"type": "string"}},
+            "required": ["message"],
+        },
+    },
+    {
+        "name": "mac_screenshot",
+        "description": "Take a screenshot of the whole screen and save it to the Desktop.",
+        "input_schema": {"type": "object", "properties": {}},
+    },
+    {
+        "name": "mac_clipboard_read",
+        "description": "Read the current clipboard text.",
+        "input_schema": {"type": "object", "properties": {}},
+    },
+    {
+        "name": "mac_clipboard_write",
+        "description": "Copy text to the clipboard.",
+        "input_schema": {
+            "type": "object",
+            "properties": {"text": {"type": "string"}},
+            "required": ["text"],
+        },
+    },
+    {
+        "name": "mac_list_shortcuts",
+        "description": "List the user's Apple Shortcuts by name.",
+        "input_schema": {"type": "object", "properties": {}},
+    },
+    {
+        "name": "mac_run_shortcut",
+        "description": (
+            "Run one of the user's Apple Shortcuts by exact name (see "
+            "mac_list_shortcuts). Shortcuts can control HomeKit, Focus "
+            "modes, messages and much more."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "name": {"type": "string"},
+                "input": {"type": "string", "description": "Optional text input"},
+            },
+            "required": ["name"],
+        },
+    },
+    {
+        "name": "mac_run_applescript",
+        "description": (
+            "Run an AppleScript for anything the other mac_ tools can't do "
+            "(dark mode, Finder, app automation). ALWAYS requires the user's "
+            "confirmation; the script is shown to them."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "script": {"type": "string"},
+                "purpose": {"type": "string", "description": "One-line plain-English summary for the user"},
+            },
+            "required": ["script", "purpose"],
+        },
+    },
+    # ── Files ──────────────────────────────────────────────────────
+    {
+        "name": "files_search",
+        "description": (
+            "Search the user's files (Spotlight) by name or content within "
+            "their allowed folders. Returns paths."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "query": {"type": "string"},
+                "max_results": {"type": "integer", "description": "Default 15"},
+            },
+            "required": ["query"],
+        },
+    },
+    {
+        "name": "files_read",
+        "description": "Read a text, Markdown, code or PDF file (path from files_search).",
+        "input_schema": {
+            "type": "object",
+            "properties": {"path": {"type": "string"}},
+            "required": ["path"],
+        },
+    },
+    {
+        "name": "files_open",
+        "description": "Open a file in its default Mac app (path from files_search).",
+        "input_schema": {
+            "type": "object",
+            "properties": {"path": {"type": "string"}},
+            "required": ["path"],
+        },
+    },
+    # ── Jarvis's voice & behaviour ─────────────────────────────────
+    {
+        "name": "voice_set_mood",
+        "description": (
+            "Change Jarvis's voice mood: the voice, speaking pace and reply "
+            "style together. Use when the user asks ('calm mode', 'be more "
+            "upbeat', 'quieter, it's late') or, if auto mood is on, when their "
+            "tone clearly calls for it."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "mood": {"type": "string", "enum": ["classic", "calm", "focused", "upbeat", "night"]},
+            },
+            "required": ["mood"],
+        },
+    },
+    {
+        "name": "voice_set_voice",
+        "description": "Use a specific installed voice regardless of mood (see voice_list_options).",
+        "input_schema": {
+            "type": "object",
+            "properties": {"voice": {"type": "string", "description": "Voice id, e.g. en_US-ryan-high"}},
+            "required": ["voice"],
+        },
+    },
+    {
+        "name": "voice_list_options",
+        "description": "List moods, installed voices and Jarvis's current settings.",
+        "input_schema": {"type": "object", "properties": {}},
+    },
+    {
+        "name": "assistant_set_preference",
+        "description": (
+            "Change how Jarvis behaves. patience: snappy|balanced|patient (how "
+            "long to wait when the user pauses mid-thought; 'give me more time' "
+            "means patient). barge_in: user can interrupt by talking. fillers: "
+            "short 'one moment' while working. speak: speak typed replies. "
+            "auto_mood: pick a mood from the user's tone. theme: arc|mark|vibranium."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "setting": {
+                    "type": "string",
+                    "enum": ["patience", "barge_in", "fillers", "speak", "auto_mood", "theme"],
+                },
+                "value": {"type": "string", "description": "New value; 'on'/'off' for switches"},
+            },
+            "required": ["setting", "value"],
+        },
+    },
+    # ── HUD ────────────────────────────────────────────────────────
+    {
+        "name": "hud_show_card",
+        "description": (
+            "Put a holographic card on the user's HUD next to the reactor: "
+            "search results, headlines, file hits, a comparison, a recipe's "
+            "steps, key numbers. Use it whenever a visual list helps, then keep "
+            "the spoken reply short ('I've put them on screen'). Items with a "
+            "url are clickable."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "title": {"type": "string"},
+                "subtitle": {"type": "string"},
+                "style": {
+                    "type": "string", "enum": ["list", "stats", "text"],
+                    "description": "list (default); stats shows big values; text is one paragraph in the first item's detail",
+                },
+                "items": {
+                    "type": "array",
+                    "items": {
+                        "type": "object",
+                        "properties": {
+                            "title": {"type": "string"},
+                            "detail": {"type": "string"},
+                            "value": {"type": "string", "description": "Short figure for stats cards"},
+                            "url": {"type": "string"},
+                        },
+                        "required": ["title"],
+                    },
+                },
+            },
+            "required": ["title", "items"],
+        },
+    },
+    {
+        "name": "hud_control",
+        "description": (
+            "Operate the HUD: set_theme (value arc|mark|vibranium), "
+            "open_history, open_settings, open_palette, close_panels, "
+            "clear_cards, orb_mode (shrink to the floating orb), full_mode, "
+            "toggle_fullscreen, mute_mic (stop listening until the user "
+            "presses Command-J)."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "action": {
+                    "type": "string",
+                    "enum": [
+                        "set_theme", "open_history", "open_settings", "open_palette",
+                        "close_panels", "clear_cards", "orb_mode", "full_mode",
+                        "toggle_fullscreen", "mute_mic",
+                    ],
+                },
+                "value": {"type": "string"},
+            },
+            "required": ["action"],
+        },
+    },
 ]
 
 
 def _handlers():
     # Imported lazily so text mode starts even if e.g. Google libs are
     # missing; a broken dependency surfaces as a tool error, not a crash.
-    from . import gmail, gcal, tasks, reminders, websearch, memory
+    from . import (
+        briefing, files, gcal, gmail, hud, mac, memory, persona, reminders,
+        system, tasks, timers, weather, websearch,
+    )
 
     return {
         "gmail_search": gmail.search,
@@ -295,7 +646,54 @@ def _handlers():
         "memory_save": memory.save,
         "memory_read": memory.read,
         "memory_delete": memory.delete,
+        "news_headlines": websearch.news,
+        "web_read_page": websearch.read_page,
+        "weather_get": weather.get,
+        "timer_set": timers.set_timer,
+        "timer_list": timers.list_timers,
+        "timer_cancel": timers.cancel,
+        "briefing_get": briefing.get,
+        "system_status": system.status,
+        "mac_open_app": mac.open_app,
+        "mac_quit_app": mac.quit_app,
+        "mac_open_url": mac.open_url,
+        "mac_set_volume": mac.set_volume,
+        "mac_media": mac.media,
+        "mac_now_playing": mac.now_playing,
+        "mac_notify": mac.notify,
+        "mac_screenshot": mac.screenshot,
+        "mac_clipboard_read": mac.clipboard_read,
+        "mac_clipboard_write": mac.clipboard_write,
+        "mac_list_shortcuts": mac.list_shortcuts,
+        "mac_run_shortcut": mac.run_shortcut,
+        "mac_run_applescript": mac.run_applescript,
+        "files_search": files.search,
+        "files_read": files.read,
+        "files_open": files.open_file,
+        "voice_set_mood": persona.set_mood,
+        "voice_set_voice": persona.set_voice,
+        "voice_list_options": persona.list_options,
+        "assistant_set_preference": persona.set_preference,
+        "hud_show_card": hud.show_card,
+        "hud_control": hud.control,
     }
+
+
+_listeners = []
+
+
+def add_listener(fn):
+    """Observe tool activity: fn(phase, name, args, is_error) where phase is
+    "start" or "end". Used by the HUD to show what Jarvis is doing."""
+    _listeners.append(fn)
+
+
+def _emit(phase, name, args, is_error=False):
+    for fn in list(_listeners):
+        try:
+            fn(phase, name, args, is_error)
+        except Exception:  # noqa: BLE001 — observers must never break a tool call
+            pass
 
 
 def execute(name, args, confirm):
@@ -304,12 +702,18 @@ def execute(name, args, confirm):
     `confirm` is a callable(prompt) -> bool that asks the user out loud
     (voice mode) or on the keyboard (text mode).
     """
+    # The model must not be able to smuggle in the confirmation flag.
+    args = {k: v for k, v in (args or {}).items() if not k.startswith("_")}
+    _emit("start", name, args)
+    text, is_error = _execute(name, args, confirm)
+    _emit("end", name, args, is_error)
+    return text, is_error
+
+
+def _execute(name, args, confirm):
     handlers = _handlers()
     if name not in handlers:
         return "Unknown tool: {}".format(name), True
-
-    # The model must not be able to smuggle in the confirmation flag.
-    args = {k: v for k, v in (args or {}).items() if not k.startswith("_")}
 
     handler = handlers[name]
     try:

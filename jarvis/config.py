@@ -49,8 +49,7 @@ WAKE_THRESHOLD = _float("WAKE_THRESHOLD", 0.5)
 # Timings
 FOLLOWUP_WINDOW = _float("FOLLOWUP_WINDOW", 6)
 RECORD_START_TIMEOUT = _float("RECORD_START_TIMEOUT", 6)
-SILENCE_DURATION = _float("SILENCE_DURATION", 1.2)
-MAX_UTTERANCE_SECONDS = _float("MAX_UTTERANCE_SECONDS", 30)
+MAX_UTTERANCE_SECONDS = _float("MAX_UTTERANCE_SECONDS", 60)
 REMINDER_POLL_SECONDS = _float("REMINDER_POLL_SECONDS", 5)
 RMS_THRESHOLD = _float("RMS_THRESHOLD", 500)
 
@@ -62,6 +61,19 @@ GOOGLE_TOKEN_PATH = _path("GOOGLE_TOKEN_PATH", "./data/google_token.json")
 GOOGLE_SCOPES = [
     "https://www.googleapis.com/auth/gmail.modify",
     "https://www.googleapis.com/auth/calendar",
+]
+
+# Weather: city name for the default location; empty = locate by IP
+WEATHER_LOCATION = os.getenv("WEATHER_LOCATION", "")
+
+# Folders Jarvis may search, read and open files in (comma-separated)
+FILES_ROOTS = [
+    Path(os.path.expanduser(p.strip())).resolve()
+    for p in os.getenv(
+        "FILES_ROOTS",
+        "~/Documents,~/Desktop,~/Downloads,~/Library/Mobile Documents/com~apple~CloudDocs",
+    ).split(",")
+    if p.strip()
 ]
 
 # Paths

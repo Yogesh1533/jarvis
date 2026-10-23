@@ -49,3 +49,19 @@ def load_all():
     for path in sorted(config.MEMORY_DIR.glob("*.md")):
         parts.append("--- memory: {} ---\n{}".format(path.stem, path.read_text(encoding="utf-8").strip()))
     return "\n\n".join(parts)
+
+
+def items():
+    """All memories as {name, summary, content} for the HUD memory panel."""
+    if not config.MEMORY_DIR.is_dir():
+        return []
+    out = []
+    for path in sorted(config.MEMORY_DIR.glob("*.md")):
+        text = path.read_text(encoding="utf-8").strip()
+        first, _, rest = text.partition("\n")
+        out.append({
+            "name": path.stem,
+            "summary": first.lstrip("# ").strip(),
+            "content": rest.strip(),
+        })
+    return out

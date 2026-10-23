@@ -1,6 +1,7 @@
 """Gmail: read, search, draft — sending is gated behind user confirmation."""
 import base64
 from email.mime.text import MIMEText
+from html import unescape
 
 from . import ConfirmationRequired
 
@@ -97,3 +98,26 @@ def send_draft(draft_id, _confirmed=False):
         )
     svc.users().drafts().send(userId="me", body={"id": draft_id}).execute()
     return "Email sent to {} — subject: {}.".format(to, subject)
+
+
+def unread_data(max_results=8):
+    """Structured unread inbox for the HUD mail panel."""
+    svc = _service()
+    resp = svc.users().messages().list(
+        userId="me", q="is:unread in:inbox", maxResults=int(max_results)
+    ).execute()
+    items = []
+    for m in resp.get("messages", []):
+        msg = svc.users().messages().get(
+            userId="me", id=m["id"], format="metadata",
+            metadataHeaders=["From", "Subject", "Date"],
+        ).execute()
+        sender = _header(msg, "From")
+        items.append({
+            "id": m["id"],
+            "from": sender.split("<")[0].strip().strip('"') or sender,
+            "subject": _header(msg, "Subject") or "(no subject)",
+            "date": _header(msg, "Date"),
+            "snippet": unescape(msg.get("snippet", "")),
+        })
+    return {"count": resp.get("resultSizeEstimate", len(items)), "items": items}

@@ -1,0 +1,44 @@
+{
+  "name": "jarvis-desktop",
+  "productName": "Jarvis",
+  "version": "1.0.0",
+  "description": "Jarvis as a Mac app: always-on voice assistant with a global ⌘J shortcut.",
+  "main": "main.js",
+  "private": true,
+  "scripts": {
+    "start": "electron .",
+    "prepare-app": "node scripts/prepare.js",
+    "pack": "node scripts/prepare.js && electron-builder --mac --dir && node scripts/sign.js"
+  },
+  "devDependencies": {
+    "electron": "44.9.3",
+    "electron-builder": "26.15.3"
+  },
+  "build": {
+    "appId": "local.jarvis.desktop",
+    "productName": "Jarvis",
+    "directories": {
+      "output": "out.nosync"
+    },
+    "files": [
+      "main.js",
+      "preload.js",
+      "server.js",
+      "loading.html",
+      "assets/**",
+      "package.json"
+    ],
+    "mac": {
+      "icon": "assets/icon.icns",
+      "category": "public.app-category.productivity",
+      "identity": null,
+      "hardenedRuntime": false,
+      "target": "dir",
+      "extendInfo": {
+        "NSMicrophoneUsageDescription": "Jarvis listens for its wake word and for what you ask it.",
+        "LSUIElement": false
+      }
+    }
+  },
+  "jarvisRoot": "/Users/yogesh/Library/Mobile Documents/com~apple~CloudDocs/Documents/jarvis"
+}

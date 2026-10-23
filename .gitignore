@@ -6,3 +6,11 @@ __pycache__/
 *.pyc
 .venv/
 venv/
+.venv
+.venv.old/
+*.nosync
+frontend/node_modules
+frontend/dist/
+*.tsbuildinfo
+desktop/node_modules
+desktop/out.nosync/

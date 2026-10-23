@@ -188,6 +188,191 @@ check("'no' is not affirmative", not is_affirmative("no"))
 check("'yesterday was fine' is not affirmative", not is_affirmative("yesterday was fine"))
 check("empty is not affirmative", not is_affirmative(""))
 
+print("== tool events for the HUD ==")
+events = []
+tools.add_listener(lambda phase, name, args, is_error: events.append((phase, name)))
+tools.execute("task_list", {}, confirm=lambda p: False)
+check("listener sees start then end", events[-2:] == [("start", "task_list"), ("end", "task_list")])
+
+print("== mac control gates (osascript stubbed) ==")
+from jarvis.tools import mac  # noqa: E402
+
+ran = []
+mac._run = lambda cmd, input_text=None, timeout=20: ran.append(cmd) or ""
+script_args = {"script": 'tell application "Finder" to empty trash', "purpose": "empty the trash"}
+out, err = tools.execute("mac_run_applescript", dict(script_args, _confirmed=True), confirm=lambda p: False)
+check("applescript blocked without confirmation (even self-confirmed)", ran == [] and out == tools.DECLINED_MESSAGE)
+prompts = []
+tools.execute("mac_run_applescript", script_args, confirm=lambda p: prompts.append(p) or True)
+check("applescript confirmation shows the script", "empty trash" in prompts[0] and len(ran) == 1)
+ran.clear()
+tools.execute("mac_quit_app", {"name": "Safari"}, confirm=lambda p: False)
+check("quitting an app needs confirmation", ran == [])
+evil = 'x" & (do shell script "rm -rf ~") & "'
+mac.notify(evil, title="t")
+check("user strings reach osascript as argv, never as script source",
+      ran[-1][-1] == evil and not any("rm -rf" in part for part in ran[-1][:-2]))
+try:
+    mac.open_url("file:///etc/passwd")
+    check("non-http URLs rejected", False)
+except ValueError:
+    check("non-http URLs rejected", True)
+
+print("== files are confined to FILES_ROOTS ==")
+from jarvis.tools import files  # noqa: E402
+
+config.FILES_ROOTS = [_tmp.resolve()]
+(_tmp / "notes.md").write_text("launch codes: 0000", encoding="utf-8")
+check("reads a file inside the root", "launch codes" in files.read(str(_tmp / "notes.md")))
+for outside in ("/etc/hosts", str(_tmp / ".." / "outside.txt")):
+    try:
+        files.read(outside)
+        check("rejects {}".format(outside), False)
+    except PermissionError:
+        check("rejects path outside root ({})".format(Path(outside).name), True)
+
+print("== timers ==")
+from jarvis.tools import timers  # noqa: E402
+
+done = []
+timers.set_notifier(done.append)
+timers.set_timer(1, "tea")
+check("timer listed while running", "tea" in timers.list_timers())
+time.sleep(1.4)
+check("timer fires its notifier", done == ["tea"] and timers.rows() == [])
+
+print("== turn-taking: pausing mid-thought ==")
+import numpy as np  # noqa: E402
+from jarvis.audio import turns  # noqa: E402
+from jarvis.audio.turns import TurnDetector, judge  # noqa: E402
+
+check("dangling word is incomplete", judge("Turn off the lights in the") == "incomplete")
+check("trailing comma is incomplete", judge("Set a timer for ten minutes,") == "incomplete")
+check("'let me think' asks for time", judge("Remind me to, um, let me think") == "hold")
+check("trailing 'um' asks for time", judge("What about um") == "hold")
+check("a full request is complete", judge("What's the weather tomorrow?") == "complete")
+check("a short answer is complete", judge("Yes.") == "complete")
+check("a lone word is incomplete", judge("Weather") == "incomplete")
+
+
+class FakeVAD:
+    """Speech probability from the chunk itself: loud = speech."""
+
+    def prob(self, chunk):
+        return 0.95 if chunk.any() else 0.0
+
+
+quiet = np.zeros(turns.CHUNK, dtype=np.int16)
+loud = (np.ones(turns.CHUNK) * 4000).astype(np.int16)
+per_s = int(1 / turns.CHUNK_S)
+
+
+def run(td, chunks, verdict=None):
+    """Feed chunks; answer a "check" with `verdict`. Returns (result, seconds of trailing silence)."""
+    silent = 0
+    for c in chunks:
+        r = td.feed(c)
+        silent = silent + 1 if not c.any() else 0
+        if r == "check" and verdict:
+            td.verdict(verdict, "some text")
+        if r in ("done", "timeout"):
+            return r, silent * turns.CHUNK_S
+    return "wait", silent * turns.CHUNK_S
+
+
+td = TurnDetector(start_timeout=0.4, detector=FakeVAD())
+check("silence before speaking times out", run(td, [quiet] * 10)[0] == "timeout")
+
+td = TurnDetector(start_timeout=2, patience="balanced", detector=FakeVAD())
+r, after = run(td, [loud] * 10 + [quiet] * 30, verdict="complete")
+check("complete sentence ends quickly (<1 s of silence)", r == "done" and after < 1.0)
+
+td = TurnDetector(start_timeout=2, patience="balanced", detector=FakeVAD())
+r, after = run(td, [loud] * 10 + [quiet] * (3 * per_s), verdict="incomplete")
+check("mid-thought pause of 3 s does not end the turn", r == "wait")
+r, after = run(td, [loud] * 5 + [quiet] * (2 * per_s), verdict="complete")
+check("carrying on after the pause, then finishing, ends it", r == "done")
+check("both halves are in the utterance", len(td.audio()) >= 15 * turns.CHUNK)
+
+td = TurnDetector(start_timeout=2, patience="balanced", detector=FakeVAD())
+r, _ = run(td, [loud] * 10 + [quiet] * (10 * per_s), verdict="hold")
+check("'let me think' waits well past the usual limit", r == "wait")
+
+td = TurnDetector(start_timeout=2, patience="snappy", detector=FakeVAD())
+r, after = run(td, [loud] * 10 + [quiet] * (5 * per_s), verdict="incomplete")
+check("snappy patience gives up sooner", r == "done" and after <= 2.2)
+
+td = TurnDetector(start_timeout=2, detector=FakeVAD(), preroll=[loud] * 3, speaking=True)
+check("barge-in pre-roll keeps the first words", len(td.audio()) == 3 * turns.CHUNK)
+
+print("== settings, moods and voice control ==")
+from jarvis import hud_bridge, moods, settings  # noqa: E402
+from jarvis.assistant import stamp  # noqa: E402
+
+NO = lambda prompt: False  # noqa: E731 — none of these tools should ask
+
+changes = []
+settings.add_listener(lambda snap, ch: changes.append(ch))
+check("defaults load", settings.get()["mood"] == "classic")
+try:
+    settings.update(patience="forever")
+    check("invalid patience rejected", False)
+except ValueError:
+    check("invalid patience rejected", True)
+try:
+    settings.update(colour="red")
+    check("unknown setting rejected", False)
+except ValueError:
+    check("unknown setting rejected", True)
+out, err = tools.execute("voice_set_mood", {"mood": "calm"}, confirm=NO)
+check("voice_set_mood changes the mood", not err and settings.get()["mood"] == "calm")
+check("listeners hear about it", {"mood": "calm"} in [{k: v for k, v in c.items() if k == "mood"} for c in changes])
+check("calm mood slows the voice", moods.current()["speed"] < 1.0)
+check("mood style reaches the model", "calm" in stamp("hello").lower())
+out, err = tools.execute("assistant_set_preference", {"setting": "patience", "value": "patient"}, confirm=NO)
+check("patience is voice-controllable", not err and settings.get()["patience"] == "patient")
+out, err = tools.execute("assistant_set_preference", {"setting": "barge_in", "value": "off"}, confirm=NO)
+check("'off' turns a toggle off", settings.get()["barge_in"] is False)
+
+hud_bridge.attach(None)
+out, _ = tools.execute("hud_show_card", {"title": "Mars", "items": [{"title": "Moons", "value": "2"}]}, confirm=NO)
+check("cards degrade gracefully with no HUD open", "isn't open" in out)
+sent_events = []
+hud_bridge.attach(lambda e: sent_events.append(e) or True)
+tools.execute("hud_show_card", {"title": "Links", "items": [
+    {"title": "ok", "url": "https://example.com"},
+    {"title": "bad", "url": "javascript:alert(1)"},
+]}, confirm=NO)
+urls = [i["url"] for i in sent_events[-1]["items"]]
+check("card links must be http(s)", urls == ["https://example.com", None])
+tools.execute("hud_control", {"action": "orb_mode"}, confirm=NO)
+check("hud_control reaches the HUD", sent_events[-1] == {"type": "hud", "action": "orb_mode"})
+tools.execute("hud_control", {"action": "set_theme", "value": "mark"}, confirm=NO)
+check("theme can be set by voice", settings.get()["theme"] == "mark")
+hud_bridge.attach(None)
+settings.update(**settings.DEFAULTS)
+
+print("== HUD confirmation flow ==")
+import threading  # noqa: E402
+from jarvis import web  # noqa: E402
+
+hub = web.Hub()
+hub._synth = lambda text: (None, None)   # no TTS in tests
+answers = []
+t = threading.Thread(target=lambda: answers.append(hub.web_confirm("Delete task 9?")))
+t.start()
+time.sleep(0.2)
+check("pending confirmation is exposed to the HUD", hub.confirm and hub.confirm["prompt"] == "Delete task 9?")
+hub.handle({"type": "text", "text": "no thanks"})
+t.join(2)
+check("typing 'no' declines", answers == [False] and hub.confirm is None)
+t = threading.Thread(target=lambda: answers.append(hub.web_confirm("Send it?")))
+t.start()
+time.sleep(0.2)
+hub.handle({"type": "confirm", "yes": True})
+t.join(2)
+check("clicking approve confirms", answers == [False, True])
+
 print("== web search (live, needs network) ==")
 try:
     from jarvis.tools import websearch

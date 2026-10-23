@@ -3,14 +3,13 @@
 
 The SDK is async and session-oriented, so this class owns a private event
 loop on a daemon thread and exposes the same synchronous .chat() the rest
-of Jarvis expects. All 19 Jarvis tools are registered as an in-process MCP
+of Jarvis expects. All Jarvis tools are registered as an in-process MCP
 server; each call is dispatched through jarvis.tools.execute, so the
 confirmation gate (including the _confirmed stripping) applies unchanged.
 """
 import asyncio
 import os
 import threading
-from datetime import datetime
 
 from . import config, tools
 
@@ -97,10 +96,9 @@ class AgentBackend:
         from claude_agent_sdk import AssistantMessage, TextBlock
 
         client = await self._ensure_client()
-        stamped = "[{}] {}".format(
-            datetime.now().strftime("%A %Y-%m-%d %H:%M"), user_text
-        )
-        await client.query(stamped)
+        from .assistant import stamp
+
+        await client.query(stamp(user_text))
         parts = []
         async for message in client.receive_response():
             if isinstance(message, AssistantMessage):
