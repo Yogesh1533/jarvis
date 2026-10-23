@@ -1,0 +1,72 @@
+"""Central configuration. Everything comes from .env at the project root."""
+import os
+from pathlib import Path
+
+from dotenv import load_dotenv
+
+ROOT = Path(__file__).resolve().parent.parent
+load_dotenv(ROOT / ".env")
+
+
+def _path(key: str, default: str) -> Path:
+    raw = os.getenv(key, default)
+    p = Path(os.path.expanduser(raw))
+    return p if p.is_absolute() else (ROOT / p).resolve()
+
+
+def _float(key: str, default: float) -> float:
+    try:
+        return float(os.getenv(key, "") or default)
+    except ValueError:
+        return default
+
+
+# LLM access
+# "api"       — Anthropic API key + credits (ANTHROPIC_API_KEY)
+# "agent-sdk" — your Claude subscription via the Claude Code CLI login
+LLM_BACKEND = os.getenv("LLM_BACKEND", "api")
+LLM_MODEL = os.getenv("LLM_MODEL", "claude-fable-5")
+LLM_FALLBACK_MODEL = os.getenv("LLM_FALLBACK_MODEL", "claude-opus-4-8")
+LLM_EFFORT = os.getenv("LLM_EFFORT", "low")
+LLM_MAX_TOKENS = int(_float("LLM_MAX_TOKENS", 4096))
+
+# Speech to text
+STT_PROVIDER = os.getenv("STT_PROVIDER", "local")
+WHISPER_MODEL = os.getenv("WHISPER_MODEL", "base.en")
+OPENAI_API_KEY = os.getenv("OPENAI_API_KEY", "")
+
+# Text to speech
+TTS_PROVIDER = os.getenv("TTS_PROVIDER", "piper")
+PIPER_VOICE = _path("PIPER_VOICE", "./data/voices/en_GB-alan-medium.onnx")
+ELEVENLABS_API_KEY = os.getenv("ELEVENLABS_API_KEY", "")
+ELEVENLABS_VOICE_ID = os.getenv("ELEVENLABS_VOICE_ID", "21m00Tcm4TlvDq8ikWAM")
+OPENAI_TTS_VOICE = os.getenv("OPENAI_TTS_VOICE", "alloy")
+
+# Wake word
+WAKE_WORD_MODEL = os.getenv("WAKE_WORD_MODEL", "hey_jarvis")
+WAKE_THRESHOLD = _float("WAKE_THRESHOLD", 0.5)
+
+# Timings
+FOLLOWUP_WINDOW = _float("FOLLOWUP_WINDOW", 6)
+RECORD_START_TIMEOUT = _float("RECORD_START_TIMEOUT", 6)
+SILENCE_DURATION = _float("SILENCE_DURATION", 1.2)
+MAX_UTTERANCE_SECONDS = _float("MAX_UTTERANCE_SECONDS", 30)
+REMINDER_POLL_SECONDS = _float("REMINDER_POLL_SECONDS", 5)
+RMS_THRESHOLD = _float("RMS_THRESHOLD", 500)
+
+SAMPLE_RATE = 16000  # required by openWakeWord and Whisper
+
+# Google
+GOOGLE_CREDENTIALS_PATH = _path("GOOGLE_CREDENTIALS_PATH", "./credentials.json")
+GOOGLE_TOKEN_PATH = _path("GOOGLE_TOKEN_PATH", "./data/google_token.json")
+GOOGLE_SCOPES = [
+    "https://www.googleapis.com/auth/gmail.modify",
+    "https://www.googleapis.com/auth/calendar",
+]
+
+# Paths
+SYSTEM_PROMPT_PATH = _path(
+    "SYSTEM_PROMPT_PATH", "./config/jarvis-voice-assistant-system-prompt.md"
+)
+MEMORY_DIR = _path("MEMORY_DIR", "./memory")
+DB_PATH = _path("DB_PATH", "./data/jarvis.db")
