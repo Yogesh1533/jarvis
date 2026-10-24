@@ -437,6 +437,64 @@ else:
     heard = sum(p >= 0.6 for p in probs) / len(probs)
     check("speech over Jarvis is heard after a long quiet stretch ({:.0%})".format(heard), heard >= 0.3)
 
+print("== meeting alerts and the morning briefing ==")
+from datetime import datetime, timedelta, timezone  # noqa: E402
+
+from jarvis import proactive  # noqa: E402
+
+now = datetime(2026, 10, 26, 9, 55, tzinfo=timezone.utc)
+standup = {"id": "e1", "title": "Standup", "start": now + timedelta(minutes=5), "link": "https://meet"}
+check("meeting alert wording", proactive.alert_text(standup, now) == "Heads up: Standup starts in 5 minutes, on Google Meet.")
+check("a location is named", proactive.alert_text(
+    {"title": "Dentist", "start": now + timedelta(minutes=1), "location": "12 King St, Sydney"}, now
+) == "Heads up: Dentist starts in 1 minute, at 12 King St.")
+
+said = []
+fake_hub = type("H", (), {"announce": lambda self, kind, text, speak=True: said.append(text)})()
+watcher = proactive.Proactive(fake_hub)
+watcher.fetched = time.time()   # don't call Google
+later = {"id": "e2", "title": "Review", "start": datetime.now(timezone.utc) + timedelta(minutes=40)}
+soon = {"id": "e3", "title": "Sync", "start": datetime.now(timezone.utc) + timedelta(minutes=4)}
+begun = {"id": "e4", "title": "Started", "start": datetime.now(timezone.utc) - timedelta(minutes=1)}
+watcher.events = [later, soon, begun]
+watcher._meetings(5)
+watcher._meetings(5)
+check("alerts only for meetings within the lead time, once", len(said) == 1 and "Sync" in said[0])
+spoken_too = []
+fake_hub.announce = lambda kind, text, speak=True: spoken_too.append(speak)
+real_idle, proactive.idle_seconds = proactive.idle_seconds, lambda: 3600
+watcher.alerted.clear()
+watcher._meetings(5)
+proactive.idle_seconds = real_idle
+check("alerts aren't spoken to an empty room", spoken_too == [False])
+
+morning = datetime(2026, 10, 26, 8, 15)
+check("briefing plays once you're at the Mac after its time",
+      proactive.briefing_due(morning, "07:00", None, idle=5))
+check("...not before its time", not proactive.briefing_due(morning, "08:30", None, idle=5))
+check("...not while you're away", not proactive.briefing_due(morning, "07:00", None, idle=900))
+check("...not twice in a day", not proactive.briefing_due(morning, "07:00", "2026-10-26", idle=5))
+check("...not in the afternoon", not proactive.briefing_due(morning.replace(hour=15), "07:00", None, idle=5))
+check("...not when off", not proactive.briefing_due(morning, "off", None, idle=5))
+
+check("briefing times are normalised", settings.update(briefing="7:30")["briefing"] == "07:30")
+check("'10 minutes' sets the alert lead", settings.update(meeting_alerts="10 minutes")["meeting_alerts"] == "10")
+try:
+    settings.update(briefing="25:00")
+    check("impossible briefing times are refused", False)
+except ValueError:
+    check("impossible briefing times are refused", True)
+settings.update(briefing="07:00", meeting_alerts="5")
+
+started = []
+hub.clients = set()
+check("no briefing without a window to hear it", hub.brief("x") is False)
+hub.clients = {object()}
+hub.state = "idle"
+real_submit, hub.submit = hub.submit, lambda text, source, speak=True, last=False: started.append(source)
+check("the briefing starts a turn of Jarvis's own", hub.brief("x") is True and started == ["auto"])
+hub.submit, hub.clients = real_submit, set()
+
 print("== media, screen images and messages ==")
 from jarvis.tools import media  # noqa: E402
 

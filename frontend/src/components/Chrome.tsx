@@ -390,6 +390,13 @@ const WAKE: { id: "low" | "normal" | "high"; label: string; note: string }[] = [
   { id: "high", label: "Sensitive", note: "Hears you from across the room, sometimes wakes by mistake" },
 ];
 
+const BRIEFING_TIMES = ["06:00", "06:30", "07:00", "07:30", "08:00", "08:30", "09:00", "09:30", "10:00"];
+
+function timeOfDay(hhmm: string) {
+  const [h, m] = hhmm.split(":").map(Number);
+  return `${h % 12 || 12}:${String(m).padStart(2, "0")} ${h < 12 ? "am" : "pm"}`;
+}
+
 /** Which mic to use, with a live meter so you can see it hears you. */
 function MicPicker() {
   const local = useStore((s) => s.local);
@@ -507,6 +514,32 @@ export function SettingsDrawer() {
           onChange={() => setServer({ conversation: server.conversation === "open" ? "brief" : "open" })}
         />
         <p className="fine">Say “that's all” or “thanks, Jarvis” to end a conversation early.</p>
+      </fieldset>
+
+      <fieldset className="setting">
+        <legend>Heads-ups</legend>
+        <label className="select-row">
+          <span>Before meetings</span>
+          <select value={server.meeting_alerts} onChange={(e) => setServer({ meeting_alerts: e.target.value as typeof server.meeting_alerts })}>
+            <option value="off">Off</option>
+            <option value="5">5 minutes</option>
+            <option value="10">10 minutes</option>
+            <option value="15">15 minutes</option>
+          </select>
+        </label>
+        <label className="select-row">
+          <span>Morning briefing</span>
+          <select value={server.briefing} onChange={(e) => setServer({ briefing: e.target.value })}>
+            <option value="off">Off</option>
+            {[...new Set([...BRIEFING_TIMES, server.briefing])].filter((t) => t !== "off").sort().map((t) => (
+              <option key={t} value={t}>From {timeOfDay(t)}</option>
+            ))}
+          </select>
+        </label>
+        <p className="fine">
+          {config && !config.google ? "Meeting alerts need Google connected. " : ""}
+          The briefing plays the first time you're at your Mac after that time, before noon: weather, your first meetings and important email.
+        </p>
       </fieldset>
 
       <fieldset className="setting">

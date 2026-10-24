@@ -55,6 +55,8 @@ export interface ServerSettings {
   barge_in: boolean;
   wake: "low" | "normal" | "high";
   conversation: "brief" | "open";
+  meeting_alerts: "off" | "5" | "10" | "15";
+  briefing: string; // "off" or "HH:MM"
   fillers: boolean;
   speak: boolean;
   auto_mood: boolean;
@@ -123,7 +125,7 @@ function loadLocal(): LocalSettings {
 
 const SERVER_DEFAULTS: ServerSettings = {
   theme: "arc", mood: "classic", voice: "", patience: "balanced",
-  barge_in: true, wake: "normal", conversation: "open", fillers: true, speak: true, auto_mood: false,
+  barge_in: true, wake: "normal", conversation: "open", meeting_alerts: "5", briefing: "07:00", fillers: true, speak: true, auto_mood: false,
 };
 
 let seq = 1;

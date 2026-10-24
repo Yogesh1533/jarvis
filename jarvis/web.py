@@ -40,7 +40,7 @@ from fastapi.responses import HTMLResponse, Response
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
-from . import config, hud_bridge, moods, settings, tools
+from . import config, hud_bridge, moods, proactive, settings, tools
 from .assistant import Assistant
 from .audio.turns import CHUNK, TurnDetector, ends_conversation, interruption, judge
 from .tools import history, media, reminders, timers
@@ -634,8 +634,9 @@ class Hub:
             self.playing_id = None
             self.turn_source = source
             self.filler_sent = False
-            self.emit({"type": "transcript", "role": "user", "text": text, "source": source})
-            _log("user", text)
+            if source != "auto":   # Jarvis's own prompts aren't something you said
+                self.emit({"type": "transcript", "role": "user", "text": text, "source": source})
+                _log("user", text)
             self.set_state("thinking")
             if self.assistant is None:
                 self.assistant = Assistant(confirm=self.web_confirm)
@@ -773,12 +774,25 @@ class Hub:
         self.emit(event)
         return bool(self.clients)
 
-    def announce(self, kind, text):
-        """Reminders and timers: show on the HUD, and speak if Jarvis is free."""
+    def announce(self, kind, text, speak=True):
+        """Reminders, timers and meeting alerts: show on the HUD, and speak
+        if Jarvis is free."""
         self.emit({"type": "notify", "kind": kind, "text": text})
-        if not self.turn_lock.locked() and self.state in ("idle", "listening"):
+        if speak and not self.turn_lock.locked() and self.state in ("idle", "listening"):
             self.voice.pause()
             self.say(text, kind="say", then="idle", speak=True)
+
+    def free(self):
+        """Nothing going on, and a window open to hear Jarvis."""
+        return bool(self.clients) and self.state == "idle" and not self.turn_lock.locked()
+
+    def brief(self, prompt):
+        """Start a turn Jarvis begins itself (the morning briefing)."""
+        if not self.free():
+            return False
+        self.emit({"type": "notify", "kind": "briefing", "text": "Your morning briefing"})
+        self.submit(prompt, source="auto", speak=True)
+        return True
 
     # -- inbound ---------------------------------------------------------
     def interrupt(self):
@@ -865,6 +879,7 @@ async def lifespan(_app):
     hud_bridge.attach(hub.to_hud)
     reminders.start_scheduler(lambda msg: hub.announce("reminder", "Reminder: " + msg))
     timers.set_notifier(lambda label: hub.announce("timer", "Your {} is done.".format(label)))
+    proactive.Proactive(hub).start()   # meeting alerts, morning briefing
     threading.Thread(target=hub.voice.load, daemon=True, name="hud-voice-load").start()
     # Now playing (YouTube Music, Spotify...) pushed live to every window.
     media.watcher.start(lambda now: hub.emit({"type": "media", "now": now}))

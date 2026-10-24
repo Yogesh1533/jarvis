@@ -6,6 +6,7 @@ me more time to think"); listeners are told about every change so the HUD
 updates live either way.
 """
 import json
+import re
 import threading
 
 from . import config
@@ -21,6 +22,8 @@ DEFAULTS = {
     "auto_mood": False,      # let Jarvis pick a mood from your tone
     "wake": "normal",        # wake-word sensitivity: low / normal / high
     "conversation": "open",  # after replying, keep listening briefly or for a while
+    "meeting_alerts": "5",   # minutes of warning before calendar events, or "off"
+    "briefing": "07:00",     # morning briefing from this time, or "off"
 }
 
 CHOICES = {
@@ -28,6 +31,7 @@ CHOICES = {
     "patience": ("snappy", "balanced", "patient"),
     "wake": ("low", "normal", "high"),
     "conversation": ("brief", "open"),
+    "meeting_alerts": ("off", "5", "10", "15"),
 }
 
 # Wake-word score needed to trigger, by sensitivity. "normal" honours
@@ -81,6 +85,17 @@ def update(**changes):
             if isinstance(value, str):
                 value = value.strip().lower() in ("1", "true", "on", "yes", "enable", "enabled")
             value = bool(value)
+        elif key == "meeting_alerts":
+            value = str(value).strip().lower().removesuffix(" minutes").removesuffix(" min")
+            if value not in CHOICES[key]:
+                raise ValueError("meeting_alerts must be one of: off, 5, 10, 15")
+        elif key == "briefing":
+            value = str(value).strip().lower()
+            if value != "off":
+                m = re.fullmatch(r"(\d{1,2}):(\d{2})", value)
+                if not m or int(m.group(1)) > 23 or int(m.group(2)) > 59:
+                    raise ValueError("briefing must be 'off' or a time like 07:30")
+                value = "{:02d}:{}".format(int(m.group(1)), m.group(2))
         elif key in CHOICES and value not in CHOICES[key]:
             raise ValueError("{} must be one of: {}".format(key, ", ".join(CHOICES[key])))
         elif key == "mood" and value not in moods.MOODS:

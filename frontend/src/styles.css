@@ -539,7 +539,7 @@ li:hover .ghost-x, .ghost-x:focus-visible, .toast .ghost-x { opacity: 1; }
   animation: rise 0.3s ease;
 }
 .toast span { flex: 1; }
-.toast-reminder, .toast-timer { border-left-color: var(--accent); box-shadow: 0 0 30px color-mix(in srgb, var(--accent) 25%, transparent); }
+.toast-reminder, .toast-timer, .toast-meeting, .toast-briefing { border-left-color: var(--accent); box-shadow: 0 0 30px color-mix(in srgb, var(--accent) 25%, transparent); }
 .toast-error { border-left-color: var(--alert); }
 
 /* ── Drawers ──────────────────────────────────────────────────────── */

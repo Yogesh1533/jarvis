@@ -192,6 +192,20 @@ One-time setup, roughly 5 minutes:
    A browser opens; sign in and approve. The token is stored at
    `data/google_token.json` and refreshes itself from then on.
 
+   If Google says "Access blocked … has not completed the Google
+   verification process", your address isn't a test user yet. Add it under
+   **Google Auth Platform → Audience → Test users**, then run the command again.
+
+Once connected, Jarvis brings things up without being asked (Settings →
+Heads-ups, or just say "warn me 10 minutes before meetings"):
+
+- **Meeting alerts**: a spoken heads-up 5 minutes before each event on your
+  calendar (5/10/15 minutes, or off). If you haven't touched the Mac in
+  10 minutes, it only shows on screen.
+- **Morning briefing**: from 7:00 (or a time you choose), the first time you
+  sit down at your Mac before noon, Jarvis reads you the weather, your first
+  meetings and the email that matters. Once a day.
+
 ## 6. Voice — pick your TTS
 
 **Piper (default, free, local).** Download a voice once:

@@ -213,6 +213,15 @@ function useCommands(): Command[] {
       hint: `now ${server.conversation}`,
       run: () => setServer({ conversation: server.conversation === "open" ? "brief" : "open" }),
     });
+    (["off", "5", "10", "15"] as const).forEach((m) =>
+      list.push({ id: "meet-" + m, group: "Heads-ups", label: m === "off" ? "Meeting alerts: Off" : `Meeting alerts: ${m} minutes before`, hint: m === server.meeting_alerts ? "current" : undefined, run: () => setServer({ meeting_alerts: m }) }),
+    );
+    list.push({
+      id: "briefing", group: "Heads-ups",
+      label: server.briefing === "off" ? "Turn on the morning briefing" : "Turn off the morning briefing",
+      hint: server.briefing === "off" ? undefined : `from ${server.briefing}`,
+      run: () => setServer({ briefing: server.briefing === "off" ? "07:00" : "off" }),
+    });
     (Object.keys(THEMES) as ThemeId[]).forEach((t) =>
       list.push({ id: "theme-" + t, group: "Theme", label: `Theme: ${THEMES[t].name}`, hint: t === server.theme ? "current" : undefined, run: () => setServer({ theme: t }) }),
     );

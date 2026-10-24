@@ -114,6 +114,35 @@ def delete_event(event_id, _confirmed=False):
     return "Event '{}' deleted.".format(event.get("summary", "(no title)"))
 
 
+def upcoming(hours=3):
+    """Timed events starting in the next `hours` that the user hasn't
+    declined: [{id, title, start (aware datetime), location, link}]."""
+    svc = _service()
+    now = datetime.now(timezone.utc)
+    resp = svc.events().list(
+        calendarId="primary",
+        timeMin=now.isoformat(),
+        timeMax=(now + timedelta(hours=hours)).isoformat(),
+        singleEvents=True,
+        orderBy="startTime",
+        maxResults=20,
+    ).execute()
+    out = []
+    for e in resp.get("items", []):
+        start = e.get("start", {}).get("dateTime")
+        me = next((a for a in e.get("attendees", []) if a.get("self")), {})
+        if not start or me.get("responseStatus") == "declined":
+            continue   # all-day events don't start at a moment worth flagging
+        out.append({
+            "id": e.get("id"),
+            "title": e.get("summary", "(no title)"),
+            "start": datetime.fromisoformat(start),
+            "location": e.get("location"),
+            "link": e.get("hangoutLink"),
+        })
+    return out
+
+
 def events_data(days_ahead=2):
     """Structured upcoming events for the HUD agenda panel."""
     svc = _service()

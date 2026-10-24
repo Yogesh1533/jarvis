@@ -637,7 +637,11 @@ TOOL_SCHEMAS = [
             "auto_mood: pick a mood from the user's tone. theme: arc|mark|vibranium. "
             "wake: low|normal|high wake-word sensitivity ('you never hear me say "
             "hey Jarvis' means high; 'you keep waking up' means low). conversation: "
-            "brief|open (open keeps listening ~20 s after each answer)."
+            "brief|open (open keeps listening ~20 s after each answer). "
+            "meeting_alerts: off|5|10|15 minutes of warning before calendar "
+            "events. briefing: off or a time like 07:30 for the spoken morning "
+            "briefing (it plays the first time the user is at their Mac after "
+            "that time, before noon)."
         ),
         "input_schema": {
             "type": "object",
@@ -646,7 +650,7 @@ TOOL_SCHEMAS = [
                     "type": "string",
                     "enum": [
                         "patience", "barge_in", "fillers", "speak", "auto_mood", "theme",
-                        "wake", "conversation",
+                        "wake", "conversation", "meeting_alerts", "briefing",
                     ],
                 },
                 "value": {"type": "string", "description": "New value; 'on'/'off' for switches"},

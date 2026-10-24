@@ -10,6 +10,8 @@ _LABELS = {
     "theme": "the HUD colour theme",
     "wake": "how easily I hear my wake word",
     "conversation": "how long I keep listening after I answer",
+    "meeting_alerts": "warnings before your meetings (minutes)",
+    "briefing": "when your morning briefing starts",
 }
 
 
