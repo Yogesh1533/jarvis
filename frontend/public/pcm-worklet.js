@@ -1,6 +1,7 @@
-// Captures mic audio, downsamples to 16 kHz mono int16 (what openWakeWord
-// and Whisper expect) with a box filter, and posts 80 ms (1280-sample)
-// frames to the main thread, which streams them to the Jarvis server.
+// Captures mic audio as 16 kHz mono int16 (what openWakeWord and Whisper
+// expect) and posts 80 ms (1280-sample) frames to the main thread, which
+// streams them to the Jarvis server. The mic context normally runs at
+// 16 kHz already; otherwise this downsamples with a simple box filter.
 class PcmCapture extends AudioWorkletProcessor {
   constructor() {
     super();

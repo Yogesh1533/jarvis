@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { api, usePanelData } from "../lib/api";
 import { ask } from "../lib/actions";
 import { countdown, dayLabel, parseLocal, relative } from "../lib/format";
-import { useStore } from "../lib/store";
+import { useStore, type NowPlaying } from "../lib/store";
 import { Empty, Icon, Panel, PanelStatus } from "./Panel";
 
 function useNow(ms = 1000) {
@@ -233,19 +233,74 @@ export function MailPanel() {
 
 // ── Media ──────────────────────────────────────────────────────────
 interface Media {
-  now: { app: string; title: string; artist: string; playing: boolean } | null;
+  now: NowPlaying | null;
   volume: number | null;
+  live?: boolean; // updates arrive over the socket as they happen
+  seek?: boolean; // the player can seek and skip 15 s
+}
+
+function mmss(s: number) {
+  const t = Math.max(0, Math.floor(s));
+  return `${Math.floor(t / 60)}:${String(t % 60).padStart(2, "0")}`;
+}
+
+/** Where the track is up to, ticking along while it plays. */
+function usePosition(now: NowPlaying | null) {
+  const [, tick] = useState(0);
+  useEffect(() => {
+    if (!now?.playing) return;
+    const id = setInterval(() => tick((n) => n + 1), 500);
+    return () => clearInterval(id);
+  }, [now?.playing, now?.title]);
+  if (!now || now.elapsed == null) return null;
+  let at = now.elapsed;
+  if (now.playing && now.at) at += (Date.now() / 1000 - now.at) * (now.rate || 1);
+  return now.duration ? Math.min(at, now.duration) : at;
+}
+
+function Progress({ now, canSeek, onSeek }: { now: NowPlaying; canSeek: boolean; onSeek: (s: number) => void }) {
+  const pos = usePosition(now);
+  const [drag, setDrag] = useState<number | null>(null);
+  if (pos === null || !now.duration) return null;
+  const shown = drag ?? pos;
+  const pct = `${(100 * shown) / now.duration}%`;
+  const commit = (v: number) => {
+    setDrag(null);
+    onSeek(v);
+  };
+  return (
+    <div className="progress">
+      <span>{mmss(shown)}</span>
+      <input
+        type="range" min={0} max={Math.round(now.duration)} step={1} value={Math.round(shown)}
+        disabled={!canSeek}
+        aria-label="Position in track"
+        style={{ ["--v" as string]: pct }}
+        onChange={(e) => setDrag(Number(e.target.value))}
+        onPointerUp={(e) => commit(Number((e.target as HTMLInputElement).value))}
+        onKeyUp={(e) => commit(Number((e.target as HTMLInputElement).value))}
+      />
+      <span>{mmss(now.duration)}</span>
+    </div>
+  );
 }
 
 export function MediaPanel() {
-  const res = usePanelData<Media>("/api/media", "media", 5000);
+  const res = usePanelData<Media>("/api/media", "media", 8000);
+  const live = useStore((s) => s.media);
   const [vol, setVol] = useState<number | null>(null);
-  const now = res.data?.now ?? null;
+  // Live updates win once they've arrived; polling still covers volume.
+  const now = live !== undefined && res.data?.live ? live : res.data?.now ?? null;
   const volume = vol ?? res.data?.volume ?? null;
+  const canSeek = !!res.data?.seek;
 
-  const control = async (action: string) => {
-    await api("/api/media", { method: "POST", body: JSON.stringify({ action }) });
-    setTimeout(res.reload, 400);
+  const control = async (action: string, position?: number) => {
+    await api("/api/media", { method: "POST", body: JSON.stringify({ action, position }) });
+    if (!res.data?.live) setTimeout(res.reload, 400);
+  };
+  const seek = (position: number) => {
+    if (now) useStore.getState().set({ media: { ...now, elapsed: position, at: Date.now() / 1000 } });
+    control("seek", position);
   };
   const commitVolume = async (level: number) => {
     await api("/api/volume", { method: "POST", body: JSON.stringify({ level }) });
@@ -255,23 +310,34 @@ export function MediaPanel() {
 
   return (
     <Panel title="Now playing" meta={now?.app} className="media-panel">
-      {res.loading && !res.data && <Empty>Checking Music and Spotify…</Empty>}
-      {res.data && !now && <Empty>Nothing playing. Say “play some music”.</Empty>}
+      {res.loading && !res.data && <Empty>Checking what's playing…</Empty>}
+      {res.data && !now && <Empty>Nothing playing. Start something in YouTube Music, or ask me to.</Empty>}
       {now && (
         <div className="track">
-          <span className={"eq" + (now.playing ? " on" : "")} aria-hidden="true"><i /><i /><i /><i /></span>
+          {now.art ? (
+            <img className="track-art" src={now.art} alt="" />
+          ) : (
+            <span className={"eq" + (now.playing ? " on" : "")} aria-hidden="true"><i /><i /><i /><i /></span>
+          )}
           <div className="track-text">
-            <span className="track-title">{now.title}</span>
-            <span className="track-artist">{now.artist}</span>
+            <span className="track-title" title={now.title}>{now.title}</span>
+            <span className="track-artist">{[now.artist, now.album].filter(Boolean).join(" — ")}</span>
           </div>
         </div>
       )}
+      {now && <Progress now={now} canSeek={canSeek} onSeek={seek} />}
       <div className="media-ctl">
+        {canSeek && (
+          <button className="icon-btn skip" onClick={() => control("back")} aria-label="Back 15 seconds" title="Back 15 seconds">−15</button>
+        )}
         <button className="icon-btn" onClick={() => control("previous")} aria-label="Previous track" title="Previous"><Icon name="prev" /></button>
         <button className="icon-btn big" onClick={() => control("playpause")} aria-label={now?.playing ? "Pause" : "Play"} title={now?.playing ? "Pause" : "Play"}>
           <Icon name={now?.playing ? "pause" : "play"} />
         </button>
         <button className="icon-btn" onClick={() => control("next")} aria-label="Next track" title="Next"><Icon name="next" /></button>
+        {canSeek && (
+          <button className="icon-btn skip" onClick={() => control("forward")} aria-label="Forward 15 seconds" title="Forward 15 seconds">+15</button>
+        )}
         {volume !== null && (
           <label className="vol" title={`Volume ${volume}%`}>
             <Icon name="volume" />

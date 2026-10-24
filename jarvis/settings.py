@@ -19,12 +19,32 @@ DEFAULTS = {
     "fillers": True,         # brief "one moment" while slow tools run
     "speak": True,           # speak typed replies too
     "auto_mood": False,      # let Jarvis pick a mood from your tone
+    "wake": "normal",        # wake-word sensitivity: low / normal / high
+    "conversation": "open",  # after replying, keep listening briefly or for a while
 }
 
 CHOICES = {
     "theme": ("arc", "mark", "vibranium"),
     "patience": ("snappy", "balanced", "patient"),
+    "wake": ("low", "normal", "high"),
+    "conversation": ("brief", "open"),
 }
+
+# Wake-word score needed to trigger, by sensitivity. "normal" honours
+# WAKE_THRESHOLD from .env.
+WAKE_THRESHOLDS = {"low": 0.65, "high": 0.32}
+
+# Seconds Jarvis keeps listening for a follow-up after it replies.
+# "brief" honours FOLLOWUP_WINDOW from .env.
+CONVERSATION_WINDOW = {"open": 20.0}
+
+
+def wake_threshold():
+    return WAKE_THRESHOLDS.get(get()["wake"], config.WAKE_THRESHOLD)
+
+
+def followup_window():
+    return CONVERSATION_WINDOW.get(get()["conversation"], config.FOLLOWUP_WINDOW)
 
 _lock = threading.Lock()
 _cache = None

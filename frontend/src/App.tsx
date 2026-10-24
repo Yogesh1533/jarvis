@@ -80,6 +80,15 @@ function handle(msg: ServerMsg) {
     case "barge_in":
       audio.stop();
       break;
+    case "media":
+      s.set({ media: msg.now });
+      break;
+    case "duck":
+      audio.duck(true);
+      break;
+    case "unduck":
+      audio.duck(false);
+      break;
     case "transcript":
       s.setCaption("user", msg.text);
       s.addLog("user", msg.text);

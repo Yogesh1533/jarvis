@@ -8,6 +8,8 @@ _LABELS = {
     "speak": "speaking typed replies aloud",
     "auto_mood": "picking a mood from your tone",
     "theme": "the HUD colour theme",
+    "wake": "how easily I hear my wake word",
+    "conversation": "how long I keep listening after I answer",
 }
 
 

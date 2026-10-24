@@ -104,9 +104,18 @@ use the mic and speakers) and allow microphone access. From then on:
   time. You'll see what it's hearing live, with a bar showing how long it
   will wait. Choose Snappy, Balanced or Patient in settings, or just say
   "give me more time to think".
-- **Talk over it** to interrupt, like with a person; it stops and listens.
-  Replies start speaking after the first sentence, and Jarvis says a
-  short "one moment" while slow tools run.
+- **Talk over it** to interrupt, like with a person. When you start
+  talking, Jarvis turns its voice down at once. If you said real words, it
+  stops and listens. If it was just "mm-hmm", "yeah", or its own voice
+  leaking into the mic, it carries on. Saying something while it's still
+  thinking adds to your request. Replies start speaking after the first
+  sentence, and Jarvis says a short "one moment" while slow tools run.
+- **Conversations stay open**: after a reply, Jarvis keeps listening for
+  about 20 seconds so you can carry on without the wake word. Say "that's
+  all" or "thanks, Jarvis" to end early, or choose shorter conversations
+  in settings. Settings also has wake word sensitivity and a microphone
+  picker with a level meter. Jarvis follows headsets and USB mics as they
+  come and go.
 - **Moods**: Classic, Calm, Focused, Upbeat and Night each have their own
   voice, pace and style. Pick one from the top bar, or say "switch to calm
   mode". You can also pick any installed voice, or let Jarvis choose a
@@ -119,8 +128,13 @@ use the mic and speakers) and allow microphone access. From then on:
   "clear the cards", "mute the mic".
 - Confirmations appear as an on-screen alert and are spoken; answer by
   voice, by typing yes/no, or with the buttons.
-- Panels include a now-playing widget for Music/Spotify with a volume
-  slider. Conversation history (clock icon) survives restarts.
+- **Now playing** follows whatever is playing on your Mac (YouTube Music,
+  including its Chrome app, Spotify, Apple Music or a browser tab) live,
+  with artwork, a progress bar you can drag to seek, ±15 s, play/pause,
+  skip and volume. It reads macOS's media session through
+  [`media-control`](https://github.com/ungive/media-control):
+  `brew install media-control`. Without it, only Spotify and Music work.
+  Conversation history (clock icon) survives restarts.
 
 ## 4c. The Mac app (⌘J from anywhere)
 
@@ -219,7 +233,11 @@ Things to try:
 
 - "Good morning" → a spoken briefing: weather, agenda, mail, tasks.
 - "Set a ten minute timer for the pasta."
-- "Play some music" / "skip this song" / "set the volume to 30."
+- "What's playing?" / "Skip this song" / "Go back 15 seconds" / "Play Sajjan Raj Vaidya on YouTube Music."
+- "What am I looking at?" / "Help me with this error." *(Jarvis looks at your screen)*
+- "Summarize this page." *(uses the browser tab you're on)*
+- "Make a note: ideas for the thesis intro…" / "What did I note about the landlord?"
+- "Text Mum that I'm running late." *(asks you to confirm first)*
 - "Open Safari and go to the BBC." / "Take a screenshot."
 - "Find my resume and summarize it."
 - "What's in the news about SpaceX?" / "Read this page: <url>"
@@ -277,10 +295,13 @@ that tries to set the confirmation flag itself.
 
 | Symptom | Fix |
 |---|---|
-| Wake word never triggers | Lower `WAKE_THRESHOLD` (e.g. 0.4); check mic permission. |
-| Triggers on random speech | Raise `WAKE_THRESHOLD` (e.g. 0.6). |
+| Wake word never triggers | Settings → Listening → Wake word: Sensitive (or lower `WAKE_THRESHOLD`); check mic permission. |
+| Triggers on random speech | Wake word: Strict (or raise `WAKE_THRESHOLD`). |
 | Cuts you off mid-sentence | Say "give me more time to think" (or Settings → Listening → Patient). |
 | Jarvis interrupts itself | Its own voice is reaching the mic: use headphones, or turn off "Stop talking when I interrupt". |
+| Jarvis doesn't hear you at all | Settings → Listening: check the microphone picker and that the level meter moves. The top bar says "Waiting for a microphone" when none is connected. |
+| Now playing is empty for YouTube Music | `brew install media-control`, then restart Jarvis. |
+| "What's on my screen" sees only the wallpaper | Allow Jarvis under System Settings → Privacy & Security → Screen Recording, then restart it. |
 | App stuck on "Starting the Jarvis server" | Look for a macOS prompt about iCloud Drive access and allow it; check `~/Library/Logs/Jarvis/server.log`. |
 | Slow transcription | Use `WHISPER_MODEL=tiny.en`, or `STT_PROVIDER=openai`. |
 | "piper CLI not found" | `pip install piper-tts` inside the venv, and download a voice (step 6). |

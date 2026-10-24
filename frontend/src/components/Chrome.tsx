@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { activate, answerConfirm, ask, interrupt, setMic, setServer, toggleFullscreen } from "../lib/actions";
+import { activate, answerConfirm, ask, chooseMic, interrupt, setMic, setServer, toggleFullscreen } from "../lib/actions";
 import { api } from "../lib/api";
 import { audio } from "../lib/audio";
 import { clock, longDate, toolDetail, toolLabel } from "../lib/format";
@@ -82,6 +82,7 @@ export function TopBar() {
   const [now, setNow] = useState(new Date());
   const online = useStore((s) => s.online);
   const voice = useStore((s) => s.voice);
+  const wantMic = useStore((s) => s.local.mic);
   const setDrawer = (d: "history" | "settings") =>
     useStore.getState().set({ drawer: useStore.getState().drawer === d ? null : d, palette: false });
 
@@ -93,7 +94,7 @@ export function TopBar() {
   const status = !online
     ? "Reconnecting to the server"
     : !voice.mic
-      ? "Microphone off"
+      ? wantMic ? "Waiting for a microphone" : "Microphone off"
       : !voice.ready
         ? "Loading voice"
         : voice.wake
@@ -383,6 +384,54 @@ const PATIENCE: { id: "snappy" | "balanced" | "patient"; label: string; note: st
   { id: "patient", label: "Patient", note: "Gives you time to think" },
 ];
 
+const WAKE: { id: "low" | "normal" | "high"; label: string; note: string }[] = [
+  { id: "low", label: "Strict", note: "Fewer false starts; say it clearly" },
+  { id: "normal", label: "Normal", note: "A good balance for most rooms" },
+  { id: "high", label: "Sensitive", note: "Hears you from across the room, sometimes wakes by mistake" },
+];
+
+/** Which mic to use, with a live meter so you can see it hears you. */
+function MicPicker() {
+  const local = useStore((s) => s.local);
+  const [mics, setMics] = useState<{ id: string; label: string }[]>([]);
+  const meter = useRef<HTMLElement>(null);
+
+  useEffect(() => {
+    const load = () => audio.microphones().then(setMics).catch(() => setMics([]));
+    load();
+    navigator.mediaDevices?.addEventListener("devicechange", load);
+    let raf = 0;
+    const tick = () => {
+      if (meter.current) meter.current.style.setProperty("--level", String(audio.level("mic")));
+      raf = requestAnimationFrame(tick);
+    };
+    tick();
+    return () => {
+      cancelAnimationFrame(raf);
+      navigator.mediaDevices?.removeEventListener("devicechange", load);
+    };
+  }, [local.mic]);
+
+  return (
+    <>
+      <label className="select-row">
+        <span>Microphone</span>
+        <select value={local.micDevice} onChange={(e) => chooseMic(e.target.value)} disabled={!local.mic}>
+          <option value="">System default{audio.micLabel && !local.micDevice ? ` (${audio.micLabel})` : ""}</option>
+          {mics.map((m) => (
+            <option key={m.id} value={m.id}>{m.label}</option>
+          ))}
+        </select>
+      </label>
+      {local.mic && (
+        <div className="mic-meter" role="img" aria-label="Microphone level">
+          <i ref={meter} />
+        </div>
+      )}
+    </>
+  );
+}
+
 export function SettingsDrawer() {
   const server = useStore((s) => s.server);
   const local = useStore((s) => s.local);
@@ -441,7 +490,23 @@ export function SettingsDrawer() {
         </div>
         <p className="fine">{PATIENCE.find((p) => p.id === server.patience)?.note}. Unfinished sentences and “hold on” always buy extra time.</p>
         <Toggle label="Always listen for the wake word" on={local.mic} onChange={() => setMic(!local.mic)} />
+        <MicPicker />
+        <span className="setting-label">Wake word</span>
+        <div className="segmented" role="radiogroup" aria-label="Wake word sensitivity">
+          {WAKE.map((w) => (
+            <button key={w.id} role="radio" aria-checked={server.wake === w.id} className={server.wake === w.id ? "active" : ""} onClick={() => setServer({ wake: w.id })}>
+              {w.label}
+            </button>
+          ))}
+        </div>
+        <p className="fine">{WAKE.find((w) => w.id === server.wake)?.note}.</p>
         <Toggle label="Stop talking when I interrupt" on={server.barge_in} onChange={() => setServer({ barge_in: !server.barge_in })} />
+        <Toggle
+          label="Keep the conversation going after each reply"
+          on={server.conversation === "open"}
+          onChange={() => setServer({ conversation: server.conversation === "open" ? "brief" : "open" })}
+        />
+        <p className="fine">Say “that's all” or “thanks, Jarvis” to end a conversation early.</p>
       </fieldset>
 
       <fieldset className="setting">

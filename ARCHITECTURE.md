@@ -42,7 +42,8 @@ the text mode and the offline test suite possible.
                                     /ws          sleep:  openWakeWord
                                                  record: TurnDetector + live
                                                          Whisper checks
-                                                 watch:  barge-in while speaking
+                                                 watch:  over-talk while speaking,
+                                                         additions while thinking
                                                  → Hub.submit()
  reactor / panels / live transcript ◄─JSON──    Hub: state, hearing, transcript,
  queues sentence audio, reports                      tool, reply/say + audio
@@ -52,20 +53,42 @@ the text mode and the offline test suite possible.
 ```
 
 - The server owns the state machine (`idle → listening → thinking →
-  speaking`, plus `confirm`); the browser renders it. While Jarvis thinks,
-  incoming audio is ignored. While it speaks, the pipeline only watches
-  for the user talking over it (6 of 8 chunks scored as speech by the
-  VAD, on echo-cancelled mic audio); then it stops playback, keeps the
-  last ~640 ms as pre-roll and starts a new turn, and the next message
-  tells the model it was cut off. After a spoken reply the browser
-  reports playback finished (by utterance id) and the server opens the
-  follow-up window, exactly like voice mode.
+  speaking`, plus `confirm`); the browser renders it. Speech detection is
+  streaming Silero (its recurrent state carried across 32 ms frames).
+  While Jarvis speaks, the pipeline watches for the user talking over it,
+  in two stages, following LiveKit's false-interruption handling. When 3
+  of 5 chunks score as speech, it captures a "probe" turn (with pre-roll)
+  and sends `duck`, and the browser lowers playback to ~20%. After ~640 ms
+  of actual speech (or at the first pause, for a short burst), Whisper
+  checks the words with `turns.interruption()`. "Stop", "wait", "no" and
+  similar always interrupt. Backchannels ("mm-hmm"), Whisper's silence
+  hallucinations, a lone word, and Jarvis's own echo (word overlap with
+  what it's saying) send `unduck`. Anything else sends `barge_in`, and the
+  probe carries on as the next turn, with the model told it was cut off.
+  While Jarvis thinks, the same watcher queues what the user says as an
+  addition: the turn answers it next, showing (not speaking) the
+  superseded reply. If the reply starts mid-addition, the capture carries
+  over as over-talk. After a spoken reply the browser reports playback
+  finished (by utterance id) and the server opens the follow-up window
+  (20 s, or 6 s with "brief" conversations). If the user signs off
+  ("that's all"), it goes back to sleep instead.
+- The browser captures the mic in its own 16 kHz AudioContext, so the
+  browser resamples (with filtering) before the worklet. It restarts
+  capture when the device disappears or the default device changes.
+- `tools/media.py` keeps one `media-control stream` process running and
+  pushes `{"type": "media"}` to every window whenever the track, play
+  state or position changes. Artwork is served from `/api/media/art`. This
+  covers any app using the macOS media session, YouTube Music's Chrome app
+  included.
+- Tools can return a `ToolImage` (a str with base64 image data), which
+  both backends pass to Claude as an image block. `screen_look` uses this.
 - Replies are synthesized sentence by sentence (first sentence alone,
   then the rest), so speech starts after one sentence of TTS. Audio and
   "one moment" fillers go only to the window that owns the mic, so with
   the app and a browser tab open Jarvis speaks once.
 - Settings (`settings.py`, persisted to `data/settings.json`) live on the
-  server: mood, voice, patience, barge-in, fillers, theme. The HUD and the
+  server: mood, voice, patience, wake sensitivity, conversation length,
+  barge-in, fillers, theme. The HUD and the
   model's tools (`voice_*`, `assistant_set_preference`) both change them,
   and every window is told. `moods.py` maps each mood to a Piper voice,
   pace and volume, plus a style note prefixed to each user message.

@@ -53,24 +53,65 @@ export function toggleFullscreen() {
   else document.documentElement.requestFullscreen?.();
 }
 
-export async function setMic(on: boolean) {
+let micBusy: Promise<void> = Promise.resolve();
+
+/** Turn the mic on or off. Calls run one at a time. */
+export function setMic(on: boolean): Promise<void> {
+  micBusy = micBusy.then(() => applyMic(on)).catch(() => {});
+  return micBusy;
+}
+
+async function applyMic(on: boolean) {
   const store = useStore.getState();
-  if (on) {
-    try {
-      await audio.init();
-      await audio.startMic((buf) => link.sendAudio(buf));
-    } catch {
+  if (!on) {
+    audio.stopMic();
+    store.setLocal({ mic: false });
+    link.send({ type: "mic", on: false });
+    return;
+  }
+  try {
+    await audio.init();
+    await audio.startMic((buf) => link.sendAudio(buf), store.local.micDevice, () => restartMic());
+  } catch (e) {
+    const name = (e as Error).name;
+    link.send({ type: "mic", on: false });
+    if (name === "NotAllowedError" || name === "SecurityError") {
       store.toast("error", "Microphone blocked. Allow mic access for Jarvis, then turn it on again.");
       store.setLocal({ mic: false });
-      link.send({ type: "mic", on: false });
-      return;
+    } else {
+      // No mic plugged in right now: stay switched on and pick one up when it appears.
+      store.toast("notice", "No microphone found. I'll start listening when one is connected.");
     }
-  } else {
-    audio.stopMic();
+    return;
   }
-  store.setLocal({ mic: on });
-  link.send({ type: "mic", on });
+  store.setLocal({ mic: true });
+  link.send({ type: "mic", on: true });
 }
+
+/** Reopen the mic (a device was unplugged or switched, or a new one chosen). */
+export function restartMic() {
+  if (!useStore.getState().local.mic) return Promise.resolve();
+  audio.stopMic();
+  return setMic(true);
+}
+
+export function chooseMic(deviceId: string) {
+  useStore.getState().setLocal({ micDevice: deviceId });
+  return restartMic();
+}
+
+// Headsets and USB mics come and go; follow them.
+let deviceTimer: ReturnType<typeof setTimeout> | undefined;
+navigator.mediaDevices?.addEventListener("devicechange", () => {
+  clearTimeout(deviceTimer);
+  deviceTimer = setTimeout(() => {
+    const { local } = useStore.getState();
+    if (!local.mic) return;
+    // Restart when we have no mic, or when following the system default
+    // (which may have just changed).
+    if (!audio.micActive || !local.micDevice) restartMic();
+  }, 600);
+});
 
 /** Interface actions Jarvis can trigger by voice (the hud_control tool). */
 export function runHudAction(action: string) {

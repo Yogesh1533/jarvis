@@ -24,8 +24,11 @@ class WakeWordDetector:
 
     def detect(self, chunk):
         """Feed one 80 ms int16 chunk; True if the wake word just fired."""
+        from .. import settings
+
         scores = self.model.predict(chunk)
-        return any(s >= config.WAKE_THRESHOLD for s in scores.values())
+        threshold = settings.wake_threshold()
+        return any(s >= threshold for s in scores.values())
 
     def wait_for_wake(self):
         """Block until the wake word is heard on the local mic."""

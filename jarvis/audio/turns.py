@@ -40,29 +40,52 @@ PREROLL_CHUNKS = 4
 
 
 class SpeechDetector:
-    """Per-chunk speech probability. Silero when available, else loudness."""
+    """Per-chunk speech probability: streaming Silero when available,
+    else loudness.
+
+    Silero is a recurrent model: carrying its state from one 32 ms frame to
+    the next is what makes it steady (~0.95 through a whole word). Scoring
+    frames in isolation, as faster-whisper's batch helper does, swings
+    between 0.1 and 0.9 inside a single syllable."""
+
+    FRAME = 512
+    CONTEXT = 64
 
     def __init__(self):
-        self.model = None
+        self.session = None
         try:
             from faster_whisper.vad import get_vad_model
 
-            self.model = get_vad_model()
+            self.session = get_vad_model().session
         except Exception as exc:  # noqa: BLE001 — loudness fallback still works
             print("[turns] Silero VAD unavailable, using loudness: {}".format(exc))
+        self.reset()
+
+    def reset(self):
+        self._h = np.zeros((1, 1, 128), dtype=np.float32)
+        self._c = np.zeros((1, 1, 128), dtype=np.float32)
+        self._ctx = np.zeros(self.CONTEXT, dtype=np.float32)
         self._carry = np.zeros(0, dtype=np.float32)
         self._last = 0.0
 
     def prob(self, chunk):
-        if self.model is None:
+        if self.session is None:
             rms = float(np.sqrt(np.mean(chunk.astype(np.float64) ** 2)))
             return min(1.0, rms / (config.RMS_THRESHOLD * 2))
         audio = np.concatenate([self._carry, chunk.astype(np.float32) / 32768.0])
-        n = (len(audio) // 512) * 512
-        self._carry = audio[n:]
-        if n:
-            out = self.model(audio[:n])
-            self._last = float(np.max(out))
+        best = None
+        while len(audio) >= self.FRAME:
+            frame, audio = audio[: self.FRAME], audio[self.FRAME:]
+            x = np.concatenate([self._ctx, frame])[None, :]
+            out, self._h, self._c = self.session.run(
+                None, {"input": x, "h": self._h, "c": self._c}
+            )
+            self._ctx = frame[-self.CONTEXT:]
+            p = float(np.squeeze(out))
+            best = p if best is None else max(best, p)
+        self._carry = audio
+        if best is not None:
+            self._last = best
         return self._last
 
 
@@ -196,3 +219,61 @@ class TurnDetector:
 
     def audio(self):
         return np.concatenate(self.recorded)
+
+
+# ── Talking over Jarvis ────────────────────────────────────────────────
+# Modelled on how voice-agent frameworks avoid false interruptions: a burst
+# of speech only ducks Jarvis's voice; it stops for good once the words
+# are known, and only if they're real words from you rather than an
+# "mm-hmm", Whisper's silence hallucinations, or Jarvis's own voice
+# leaking back into the mic.
+_BACKCHANNEL = {
+    "yeah", "yes", "yep", "ok", "okay", "mm", "mhm", "mmhmm", "hmm", "uh", "um",
+    "huh", "right", "sure", "cool", "nice", "wow", "ah", "oh", "ha", "haha",
+    "great", "alright", "aha", "uhhuh", "mmm", "got", "it", "i", "see",
+}
+_HALLUCINATED = {"you", "thank you", "thanks for watching", "bye", "thank you."}
+_STOP_WORDS = {
+    "stop", "wait", "hold", "jarvis", "no", "pause", "quiet", "enough", "cancel",
+    "shut", "actually", "sorry", "excuse", "hang",
+}
+
+
+def _words(text):
+    return re.findall(r"[a-z']+", (text or "").lower().replace("-", ""))
+
+
+def interruption(text, speaking_text="", min_words=2):
+    """Is `text` (heard while Jarvis was talking) a real interruption?
+
+    Returns "barge" (stop and listen) or "ignore" (carry on talking). A lone
+    word that isn't "stop", "wait"... is a reaction (and Whisper often turns
+    "mm-hmm" into a real word), so it takes `min_words` to interrupt; if
+    the user keeps talking, the next look hears the rest."""
+    t = (text or "").strip().lower().strip(".!?, ")
+    words = _words(t)
+    if not words or t in _HALLUCINATED:
+        return "ignore"
+    if any(w in _STOP_WORDS for w in words):
+        return "barge"
+    if all(w in _BACKCHANNEL for w in words) or len(words) < min_words:
+        return "ignore"
+    spoken = set(_words(speaking_text))
+    if spoken and len(words) >= 2:
+        echo = sum(w in spoken for w in words) / len(words)
+        if echo >= 0.6:
+            return "ignore"   # our own voice, picked up by the mic
+    return "barge"
+
+
+_DISMISS = re.compile(
+    r"^(ok(ay)?,? )?((thanks|thank you)( jarvis)?,? )?"
+    r"(that'?s (all|it)( for now)?|that is all|nothing( else)?|never ?mind|no,? thanks?|"
+    r"good ?bye|bye( jarvis)?|stop listening|go to sleep|(thanks|thank you)( jarvis| so much)?)"
+    r"\W*$"
+)
+
+
+def ends_conversation(text):
+    """"That's all", "thanks Jarvis", "goodbye": stop listening after replying."""
+    return bool(_DISMISS.match((text or "").strip().lower()))

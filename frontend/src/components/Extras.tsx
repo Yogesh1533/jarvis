@@ -204,6 +204,15 @@ function useCommands(): Command[] {
     (["snappy", "balanced", "patient"] as const).forEach((p) =>
       list.push({ id: "pat-" + p, group: "Listening", label: `Patience: ${p[0].toUpperCase() + p.slice(1)}`, hint: p === server.patience ? "current" : undefined, run: () => setServer({ patience: p }) }),
     );
+    (["low", "normal", "high"] as const).forEach((w) =>
+      list.push({ id: "wake-" + w, group: "Listening", label: `Wake word sensitivity: ${w[0].toUpperCase() + w.slice(1)}`, hint: w === server.wake ? "current" : undefined, run: () => setServer({ wake: w }) }),
+    );
+    list.push({
+      id: "conv", group: "Listening",
+      label: server.conversation === "open" ? "Short conversations (stop listening sooner)" : "Longer conversations (keep listening after replies)",
+      hint: `now ${server.conversation}`,
+      run: () => setServer({ conversation: server.conversation === "open" ? "brief" : "open" }),
+    });
     (Object.keys(THEMES) as ThemeId[]).forEach((t) =>
       list.push({ id: "theme-" + t, group: "Theme", label: `Theme: ${THEMES[t].name}`, hint: t === server.theme ? "current" : undefined, run: () => setServer({ theme: t }) }),
     );

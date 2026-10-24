@@ -649,6 +649,17 @@ li:hover .ghost-x, .ghost-x:focus-visible, .toast .ghost-x { opacity: 1; }
 .segmented button + button { border-left: 1px solid var(--line-soft); }
 .segmented button.active { color: var(--void); background: var(--holo); font-weight: 500; }
 .setting .fine { margin: -4px 0 0; }
+.setting-label { font-size: 13.5px; color: var(--ice-dim); margin-top: 4px; }
+.mic-meter { height: 4px; background: var(--line-soft); overflow: hidden; }
+.mic-meter i {
+  display: block;
+  height: 100%;
+  width: 100%;
+  background: var(--holo);
+  transform-origin: left;
+  transform: scaleX(var(--level, 0));
+  transition: transform 80ms linear;
+}
 
 /* ── Live transcript ──────────────────────────────────────────────── */
 .hearing {
@@ -778,6 +789,12 @@ li:hover .ghost-x, .ghost-x:focus-visible, .toast .ghost-x { opacity: 1; }
 .eq.on i:nth-child(3) { animation-delay: -0.6s; }
 .eq.on i:nth-child(4) { animation-delay: -0.15s; }
 @keyframes eq { from { height: 20%; } to { height: 100%; } }
+.track-art { width: 48px; height: 48px; flex: none; object-fit: cover; border: 1px solid var(--line-soft); box-shadow: 0 0 18px color-mix(in srgb, var(--holo) 25%, transparent); }
+.progress { display: flex; align-items: center; gap: 8px; margin: 0 0 8px; font-size: 12px; font-variant-numeric: tabular-nums; color: var(--ice-dim); }
+.progress input { flex: 1; min-width: 0; height: 2px; appearance: none; -webkit-appearance: none; background: linear-gradient(90deg, var(--holo) var(--v), var(--line) var(--v)); outline-offset: 6px; }
+.progress input::-webkit-slider-thumb { -webkit-appearance: none; width: 8px; height: 8px; background: var(--ice); box-shadow: 0 0 8px var(--holo); }
+.progress input:disabled::-webkit-slider-thumb { visibility: hidden; }
+.media-ctl .icon-btn.skip { font-size: 11.5px; font-variant-numeric: tabular-nums; color: var(--ice-dim); }
 .media-ctl { display: flex; align-items: center; gap: 2px; }
 .media-ctl .icon-btn { width: 32px; height: 32px; }
 .media-ctl .icon-btn.big { color: var(--holo); border-color: var(--line); }

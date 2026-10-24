@@ -6,6 +6,8 @@ type Sfx = "boot" | "wake" | "alert" | "notify" | "blip";
 class AudioEngine {
   ctx: AudioContext | null = null;
   private out: AnalyserNode | null = null;
+  private volume: GainNode | null = null;
+  private micCtx: AudioContext | null = null;
   private micAnalyser: AnalyserNode | null = null;
   private micStream: MediaStream | null = null;
   private micNode: AudioWorkletNode | null = null;
@@ -20,7 +22,8 @@ class AudioEngine {
     this.ctx = new AudioContext();
     this.out = this.ctx.createAnalyser();
     this.out.fftSize = 1024;
-    this.out.connect(this.ctx.destination);
+    this.volume = this.ctx.createGain();
+    this.out.connect(this.volume).connect(this.ctx.destination);
     if (this.ctx.state === "suspended") await this.ctx.resume();
   }
 
@@ -28,22 +31,49 @@ class AudioEngine {
     return !!this.micStream;
   }
 
-  async startMic(onFrame: (buf: ArrayBuffer) => void) {
-    if (!this.ctx || this.micStream) return;
-    const stream = await navigator.mediaDevices.getUserMedia({
-      audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true },
-    });
-    await this.ctx.audioWorklet.addModule("/pcm-worklet.js");
-    const src = this.ctx.createMediaStreamSource(stream);
-    this.micAnalyser = this.ctx.createAnalyser();
+  /**
+   * Stream the mic to `onFrame` as 16 kHz int16. The mic gets its own
+   * context running at 16 kHz, so the browser does the resampling properly
+   * (with an anti-aliasing filter) instead of our worklet. `onLost` fires if
+   * the device goes away (unplugged, or a headset switched off).
+   */
+  async startMic(onFrame: (buf: ArrayBuffer) => void, deviceId = "", onLost?: () => void) {
+    if (this.micStream) return;
+    const constraints = { echoCancellation: true, noiseSuppression: true, autoGainControl: true, channelCount: 1 };
+    let stream: MediaStream;
+    try {
+      stream = await navigator.mediaDevices.getUserMedia({
+        audio: deviceId ? { ...constraints, deviceId: { exact: deviceId } } : constraints,
+      });
+    } catch (e) {
+      // The chosen mic is gone: fall back to the system default.
+      if (!deviceId || (e as Error).name !== "OverconstrainedError") throw e;
+      stream = await navigator.mediaDevices.getUserMedia({ audio: constraints });
+    }
+    let ctx: AudioContext;
+    try {
+      ctx = new AudioContext({ sampleRate: 16000, latencyHint: "interactive" });
+    } catch {
+      ctx = new AudioContext(); // the worklet downsamples instead
+    }
+    if (ctx.state === "suspended") await ctx.resume();
+    await ctx.audioWorklet.addModule("/pcm-worklet.js");
+    const src = ctx.createMediaStreamSource(stream);
+    this.micAnalyser = ctx.createAnalyser();
     this.micAnalyser.fftSize = 1024;
     src.connect(this.micAnalyser);
-    const node = new AudioWorkletNode(this.ctx, "pcm-capture");
+    const node = new AudioWorkletNode(ctx, "pcm-capture");
     node.port.onmessage = (e) => onFrame(e.data as ArrayBuffer);
     // A silent sink keeps the worklet pulled by the audio graph.
-    const sink = this.ctx.createGain();
+    const sink = ctx.createGain();
     sink.gain.value = 0;
-    src.connect(node).connect(sink).connect(this.ctx.destination);
+    src.connect(node).connect(sink).connect(ctx.destination);
+    stream.getAudioTracks().forEach((t) => {
+      t.onended = () => {
+        if (this.micStream === stream) onLost?.();
+      };
+    });
+    this.micCtx = ctx;
     this.micStream = stream;
     this.micNode = node;
   }
@@ -51,9 +81,31 @@ class AudioEngine {
   stopMic() {
     this.micStream?.getTracks().forEach((t) => t.stop());
     this.micNode?.disconnect();
+    this.micCtx?.close().catch(() => {});
+    this.micCtx = null;
     this.micStream = null;
     this.micNode = null;
     this.micAnalyser = null;
+  }
+
+  /** Label of the mic in use, e.g. "MacBook Pro Microphone". */
+  get micLabel() {
+    return this.micStream?.getAudioTracks()[0]?.label ?? "";
+  }
+
+  async microphones(): Promise<{ id: string; label: string }[]> {
+    const all = await navigator.mediaDevices.enumerateDevices();
+    return all
+      .filter((d) => d.kind === "audioinput" && d.deviceId && d.deviceId !== "default")
+      .map((d, i) => ({ id: d.deviceId, label: d.label || `Microphone ${i + 1}` }));
+  }
+
+  /** Turn Jarvis's voice down while the user may be talking over it. */
+  duck(on: boolean) {
+    if (!this.ctx || !this.volume) return;
+    const g = this.volume.gain;
+    g.cancelScheduledValues(this.ctx.currentTime);
+    g.setTargetAtTime(on ? 0.22 : 1, this.ctx.currentTime, on ? 0.03 : 0.12);
   }
 
   /** 0..1 loudness of the mic or of Jarvis's voice. */
@@ -91,6 +143,7 @@ class AudioEngine {
       this.utterance = id;
       this.segments.clear();
       this.nextSeq = 0;
+      this.duck(false);
     }
     this.segments.set(seq, { audio: b64, text, last });
     this.pump();
@@ -188,6 +241,7 @@ class AudioEngine {
     this.utterance = null;
     this.segments.clear();
     this.stopSound();
+    this.duck(false);
   }
 
   private stopSound() {

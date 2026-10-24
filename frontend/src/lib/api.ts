@@ -50,6 +50,6 @@ export function panelsForTool(name: string): Panel[] {
   if (name.startsWith("calendar_")) return ["agenda"];
   if (name.startsWith("gmail_")) return ["mail"];
   if (name === "mac_set_volume") return ["system", "media"];
-  if (name === "mac_media" || name === "mac_now_playing" || name === "mac_open_app") return ["media"];
+  if (name === "mac_media" || name === "mac_now_playing" || name === "mac_open_app" || name === "music_search_youtube") return ["media"];
   return [];
 }

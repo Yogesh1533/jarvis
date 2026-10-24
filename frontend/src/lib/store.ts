@@ -53,6 +53,8 @@ export interface ServerSettings {
   voice: string;
   patience: "snappy" | "balanced" | "patient";
   barge_in: boolean;
+  wake: "low" | "normal" | "high";
+  conversation: "brief" | "open";
   fillers: boolean;
   speak: boolean;
   auto_mood: boolean;
@@ -62,6 +64,20 @@ export interface Persona {
   moods: Record<string, { label: string; blurb: string }>;
   voices: Record<string, string>;
   voice: string; // the voice actually in use
+}
+
+/** What's playing on the Mac (any app: YouTube Music, Spotify...). */
+export interface NowPlaying {
+  app: string | null;
+  title: string;
+  artist: string;
+  album?: string;
+  playing: boolean;
+  rate?: number;
+  duration?: number | null; // seconds
+  elapsed?: number | null;  // seconds, as of `at`
+  at?: number;              // epoch seconds
+  art?: string | null;      // URL of the artwork
 }
 
 /** What Jarvis is hearing right now, while you talk. */
@@ -91,10 +107,11 @@ export interface HoloCard {
 export interface LocalSettings {
   sounds: boolean;
   mic: boolean;
+  micDevice: string; // "" = the system default
 }
 
 const LOCAL_KEY = "jarvis.local";
-const LOCAL_DEFAULTS: LocalSettings = { sounds: true, mic: true };
+const LOCAL_DEFAULTS: LocalSettings = { sounds: true, mic: true, micDevice: "" };
 
 function loadLocal(): LocalSettings {
   try {
@@ -106,7 +123,7 @@ function loadLocal(): LocalSettings {
 
 const SERVER_DEFAULTS: ServerSettings = {
   theme: "arc", mood: "classic", voice: "", patience: "balanced",
-  barge_in: true, fillers: true, speak: true, auto_mood: false,
+  barge_in: true, wake: "normal", conversation: "open", fillers: true, speak: true, auto_mood: false,
 };
 
 let seq = 1;
@@ -119,6 +136,7 @@ interface State {
   config: ServerConfig | null;
   caption: { role: "user" | "jarvis"; text: string; key: number } | null;
   hearing: Hearing | null;
+  media: NowPlaying | null | undefined; // undefined: no live updates yet
   log: LogEntry[];
   tools: ToolEvent[];
   confirm: string | null;
@@ -152,6 +170,7 @@ export const useStore = create<State>((set, get) => ({
   config: null,
   caption: null,
   hearing: null,
+  media: undefined,
   log: [],
   tools: [],
   confirm: null,

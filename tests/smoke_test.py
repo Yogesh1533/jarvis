@@ -373,6 +373,75 @@ hub.handle({"type": "confirm", "yes": True})
 t.join(2)
 check("clicking approve confirms", answers == [False, True])
 
+print("== talking over Jarvis, and ending a conversation ==")
+from jarvis.audio.turns import ends_conversation, interruption  # noqa: E402
+
+check("'mm-hmm' over Jarvis is ignored", interruption("Mm-hmm.") == "ignore")
+check("'yeah, right' is ignored", interruption("Yeah, right.") == "ignore")
+check("a real question interrupts", interruption("Wait, what about Rome?") == "barge")
+check("'stop' always interrupts", interruption("Stop.") == "barge")
+check("a lone word (often a misheard 'mm-hmm') doesn't", interruption("Amen.") == "ignore")
+check("...but counts as an addition while thinking", interruption("Rome", min_words=1) == "barge")
+check("Whisper's silence hallucination is ignored", interruption("Thank you.") == "ignore")
+spoken = "The forecast for tomorrow is sunny with a high of twenty four degrees"
+check("Jarvis's own echo is ignored", interruption("sunny with a high of twenty four", spoken) == "ignore")
+check("'thanks, that's all' ends the conversation", ends_conversation("Thanks, that's all."))
+check("'goodbye Jarvis' ends it", ends_conversation("Goodbye"))
+check("a request that starts with thanks doesn't", not ends_conversation("Thanks for the weather, now play music"))
+settings.update(wake="high", conversation="brief")
+check("wake sensitivity lowers the threshold", settings.wake_threshold() < config.WAKE_THRESHOLD)
+check("brief conversations use the short window", settings.followup_window() == config.FOLLOWUP_WINDOW)
+settings.update(wake="normal", conversation="open")
+check("open conversations listen longer", settings.followup_window() > config.FOLLOWUP_WINDOW)
+
+hub.turn_active = True
+hub.additions = []
+hub.on_addition("and check Rome too")
+check("speech while thinking is queued for the turn", hub.additions == ["and check Rome too"])
+check("queued additions are taken once", hub._take_additions() == "and check Rome too" and hub._take_additions() == "")
+check("taking an empty queue ends the turn's window", hub.turn_active is False)
+
+try:
+    import numpy as np  # noqa: E402
+    from jarvis.audio.turns import CHUNK, SpeechDetector  # noqa: E402
+
+    vad = SpeechDetector()
+    quiet = max(vad.prob(np.zeros(CHUNK, dtype=np.int16)) for _ in range(10))
+    check("streaming speech detector stays low on silence", quiet < 0.2)
+except Exception as exc:  # noqa: BLE001
+    print("  skipped - speech model unavailable here: {}".format(exc))
+
+print("== media, screen images and messages ==")
+from jarvis.tools import media  # noqa: E402
+
+state = media._parse({
+    "title": "Suna Kaanchi", "artist": "Sajjan Raj Vaidya", "playing": True, "playbackRate": 1,
+    "bundleIdentifier": "com.google.Chrome.app.cinhimbnkkaeohfgghhklpknlkffjgod",
+    "durationMicros": 287_000_000, "elapsedTimeMicros": 44_000_000, "timestampEpochMicros": 1_000_000,
+})
+check("YouTube Music's Chrome app is named", state["app"] == "YouTube Music")
+check("track times are in seconds", state["duration"] == 287 and state["elapsed"] == 44)
+check("an empty media session means nothing playing", media._parse({}) is None)
+try:
+    media.control("rewind")
+    check("unknown media actions are refused", False)
+except ValueError:
+    check("unknown media actions are refused", True)
+
+real_handlers = tools._handlers
+tools._handlers = lambda: {"screen_look": lambda: tools.ToolImage("a screen", "AAAA", "image/png")}
+out, err = tools.execute("screen_look", {}, confirm=lambda p: True)
+tools._handlers = real_handlers
+check("screenshots reach the model as images", isinstance(out, tools.ToolImage) and out.data == "AAAA" and not err)
+
+prompts = []
+out, err = tools.execute(
+    "message_send", {"to": "+61 400 000 000", "text": "running late", "_confirmed": True},
+    confirm=lambda p: prompts.append(p) or False,
+)
+check("messages need confirmation (even with a smuggled flag)", out == tools.DECLINED_MESSAGE and len(prompts) == 1)
+check("the confirmation shows the recipient and text", "+61 400 000 000" in prompts[0] and "running late" in prompts[0])
+
 print("== web search (live, needs network) ==")
 try:
     from jarvis.tools import websearch

@@ -57,7 +57,10 @@ class AgentBackend:
                 text, _is_error = await loop.run_in_executor(
                     None, tools.execute, _name, args or {}, self.confirm
                 )
-                return {"content": [{"type": "text", "text": text}]}
+                content = [{"type": "text", "text": str(text)}]
+                if isinstance(text, tools.ToolImage):
+                    content.insert(0, {"type": "image", "data": text.data, "mimeType": text.mime})
+                return {"content": content}
 
             sdk_tools.append(
                 tool(schema["name"], schema["description"], schema["input_schema"])(handler)

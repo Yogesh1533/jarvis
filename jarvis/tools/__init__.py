@@ -18,6 +18,21 @@ class ConfirmationRequired(Exception):
         self.prompt = prompt
 
 
+class ToolImage(str):
+    """A tool result with a picture for the model to look at. The string
+    itself is the caption; `data` is base64 and `mime` its type."""
+
+    def __new__(cls, caption, data, mime="image/jpeg"):
+        obj = super().__new__(cls, caption)
+        obj.data = data
+        obj.mime = mime
+        return obj
+
+
+def _result(value):
+    return value if isinstance(value, ToolImage) else str(value)
+
+
 DECLINED_MESSAGE = (
     "The user declined the confirmation. The action was NOT performed. "
     "Do not retry it; ask the user what they would like instead."
@@ -381,18 +396,23 @@ TOOL_SCHEMAS = [
     },
     {
         "name": "mac_media",
-        "description": "Control music playback in Spotify or Apple Music.",
+        "description": (
+            "Control whatever is playing on the Mac (YouTube Music, Spotify, Apple Music, "
+            "a browser tab...): play, pause, skip, go back, jump 15 seconds, or seek."
+        ),
         "input_schema": {
             "type": "object",
             "properties": {
                 "action": {
                     "type": "string",
-                    "enum": ["play", "pause", "playpause", "next", "previous"],
+                    "enum": ["play", "pause", "playpause", "next", "previous", "forward", "back", "seek"],
+                    "description": "forward/back jump 15 seconds",
                 },
+                "position": {"type": "number", "description": "seek: seconds from the start"},
                 "app": {
                     "type": "string",
                     "enum": ["Spotify", "Music"],
-                    "description": "Default: whichever is running",
+                    "description": "Only needed to start one of these when nothing is playing",
                 },
             },
             "required": ["action"],
@@ -400,8 +420,82 @@ TOOL_SCHEMAS = [
     },
     {
         "name": "mac_now_playing",
-        "description": "What's currently playing in Spotify or Apple Music.",
+        "description": "What's playing on the Mac right now (any app, including YouTube Music), and where it's up to.",
         "input_schema": {"type": "object", "properties": {}},
+    },
+    {
+        "name": "music_search_youtube",
+        "description": (
+            "Open a YouTube Music search for a song, artist, album or playlist in the "
+            "user's YouTube Music app, so they can start it. Use for 'play X on YouTube Music'."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {"query": {"type": "string"}},
+            "required": ["query"],
+        },
+    },
+    {
+        "name": "screen_look",
+        "description": (
+            "Take a screenshot of the user's screen and look at it. Use when they ask "
+            "about what's on screen ('what am I looking at', 'help me with this', "
+            "'read this error')."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {"question": {"type": "string", "description": "What to look for"}},
+        },
+    },
+    {
+        "name": "screen_context",
+        "description": (
+            "Which app the user is in, its window title, and the page title and URL if "
+            "it's a browser. Cheaper than a screenshot; use for 'this page', 'this app'."
+        ),
+        "input_schema": {"type": "object", "properties": {}},
+    },
+    {
+        "name": "notes_create",
+        "description": "Create a note in Apple Notes.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "title": {"type": "string"},
+                "body": {"type": "string", "description": "Plain text; new lines become paragraphs"},
+            },
+            "required": ["title"],
+        },
+    },
+    {
+        "name": "notes_search",
+        "description": "Search Apple Notes by title or text. Returns titles and snippets.",
+        "input_schema": {
+            "type": "object",
+            "properties": {"query": {"type": "string"}},
+            "required": ["query"],
+        },
+    },
+    {
+        "name": "notes_read",
+        "description": "Read one Apple Note by its title.",
+        "input_schema": {
+            "type": "object",
+            "properties": {"title": {"type": "string"}},
+            "required": ["title"],
+        },
+    },
+    {
+        "name": "message_send",
+        "description": (
+            "Send an iMessage (or SMS through the user's iPhone) with the Messages app. "
+            "`to` is a contact name, phone number or email. Asks the user to confirm."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {"to": {"type": "string"}, "text": {"type": "string"}},
+            "required": ["to", "text"],
+        },
     },
     {
         "name": "mac_notify",
@@ -540,14 +634,20 @@ TOOL_SCHEMAS = [
             "long to wait when the user pauses mid-thought; 'give me more time' "
             "means patient). barge_in: user can interrupt by talking. fillers: "
             "short 'one moment' while working. speak: speak typed replies. "
-            "auto_mood: pick a mood from the user's tone. theme: arc|mark|vibranium."
+            "auto_mood: pick a mood from the user's tone. theme: arc|mark|vibranium. "
+            "wake: low|normal|high wake-word sensitivity ('you never hear me say "
+            "hey Jarvis' means high; 'you keep waking up' means low). conversation: "
+            "brief|open (open keeps listening ~20 s after each answer)."
         ),
         "input_schema": {
             "type": "object",
             "properties": {
                 "setting": {
                     "type": "string",
-                    "enum": ["patience", "barge_in", "fillers", "speak", "auto_mood", "theme"],
+                    "enum": [
+                        "patience", "barge_in", "fillers", "speak", "auto_mood", "theme",
+                        "wake", "conversation",
+                    ],
                 },
                 "value": {"type": "string", "description": "New value; 'on'/'off' for switches"},
             },
@@ -622,8 +722,8 @@ def _handlers():
     # Imported lazily so text mode starts even if e.g. Google libs are
     # missing; a broken dependency surfaces as a tool error, not a crash.
     from . import (
-        briefing, files, gcal, gmail, hud, mac, memory, persona, reminders,
-        system, tasks, timers, weather, websearch,
+        apple, briefing, files, gcal, gmail, hud, mac, media, memory, persona,
+        reminders, screen, system, tasks, timers, weather, websearch,
     )
 
     return {
@@ -658,8 +758,15 @@ def _handlers():
         "mac_quit_app": mac.quit_app,
         "mac_open_url": mac.open_url,
         "mac_set_volume": mac.set_volume,
-        "mac_media": mac.media,
-        "mac_now_playing": mac.now_playing,
+        "mac_media": media.media_tool,
+        "mac_now_playing": media.now_playing_tool,
+        "music_search_youtube": media.play_on_youtube_music,
+        "screen_look": screen.look,
+        "screen_context": screen.context,
+        "notes_create": apple.notes_create,
+        "notes_search": apple.notes_search,
+        "notes_read": apple.notes_read,
+        "message_send": apple.message_send,
         "mac_notify": mac.notify,
         "mac_screenshot": mac.screenshot,
         "mac_clipboard_read": mac.clipboard_read,
@@ -717,11 +824,11 @@ def _execute(name, args, confirm):
 
     handler = handlers[name]
     try:
-        return str(handler(**args)), False
+        return _result(handler(**args)), False
     except ConfirmationRequired as exc:
         if confirm(exc.prompt):
             try:
-                return str(handler(_confirmed=True, **args)), False
+                return _result(handler(_confirmed=True, **args)), False
             except Exception as exc2:  # noqa: BLE001 — tool errors go back to the model
                 return "Tool error: {}".format(exc2), True
         return DECLINED_MESSAGE, False

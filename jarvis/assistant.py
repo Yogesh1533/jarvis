@@ -116,11 +116,19 @@ class Assistant:
             for block in tool_uses:
                 print("  [tool] {} {}".format(block.name, block.input))
                 text, is_error = tools.execute(block.name, block.input, self.confirm)
+                content = str(text)
+                if isinstance(text, tools.ToolImage):
+                    content = [
+                        {"type": "image", "source": {
+                            "type": "base64", "media_type": text.mime, "data": text.data,
+                        }},
+                        {"type": "text", "text": str(text)},
+                    ]
                 results.append(
                     {
                         "type": "tool_result",
                         "tool_use_id": block.id,
-                        "content": text,
+                        "content": content,
                         "is_error": is_error,
                     }
                 )
