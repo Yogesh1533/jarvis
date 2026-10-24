@@ -394,6 +394,22 @@ check("brief conversations use the short window", settings.followup_window() == 
 settings.update(wake="normal", conversation="open")
 check("open conversations listen longer", settings.followup_window() > config.FOLLOWUP_WINDOW)
 
+sent, real_emit, real_synth = [], hub.emit, hub._synth
+hub.emit = sent.append
+
+
+def _cut_off_while_synthesizing(text):
+    if "rest" in text:
+        hub.playing_id = None   # the user talked over the first sentence
+    return None, None
+
+
+hub._synth = _cut_off_while_synthesizing
+hub.say("First sentence. And the rest of the answer.", "reply", "idle")
+check("a reply cut off mid-synthesis doesn't play its rest",
+      [m["seq"] for m in sent if m.get("type") == "audio"] == [0])
+hub.emit, hub._synth = real_emit, real_synth
+
 hub.turn_active = True
 hub.additions = []
 hub.on_addition("and check Rome too")
@@ -401,15 +417,25 @@ check("speech while thinking is queued for the turn", hub.additions == ["and che
 check("queued additions are taken once", hub._take_additions() == "and check Rome too" and hub._take_additions() == "")
 check("taking an empty queue ends the turn's window", hub.turn_active is False)
 
-try:
-    import numpy as np  # noqa: E402
-    from jarvis.audio.turns import CHUNK, SpeechDetector  # noqa: E402
+from jarvis.audio.turns import CHUNK, SpeechDetector  # noqa: E402
 
-    vad = SpeechDetector()
+vad = SpeechDetector()
+if vad.session is None:
+    print("  skipped - speech model unavailable here")
+else:
     quiet = max(vad.prob(np.zeros(CHUNK, dtype=np.int16)) for _ in range(10))
     check("streaming speech detector stays low on silence", quiet < 0.2)
-except Exception as exc:  # noqa: BLE001
-    print("  skipped - speech model unavailable here: {}".format(exc))
+
+    # "Wait, stop..." recorded over Jarvis's voice, after echo cancellation.
+    # After a long quiet stretch (what the mic sounds like while Jarvis
+    # talks) the detector must still notice it quickly.
+    talkover = np.fromfile(Path(__file__).parent / "fixtures" / "talkover_aec.pcm", dtype=np.int16)
+    vad = SpeechDetector()
+    for _ in range(int(600 / 0.08)):   # ten minutes of silence
+        vad.prob(np.zeros(CHUNK, dtype=np.int16))
+    probs = [vad.prob(talkover[i:i + CHUNK]) for i in range(0, 25 * CHUNK, CHUNK)]
+    heard = sum(p >= 0.6 for p in probs) / len(probs)
+    check("speech over Jarvis is heard after a long quiet stretch ({:.0%})".format(heard), heard >= 0.3)
 
 print("== media, screen images and messages ==")
 from jarvis.tools import media  # noqa: E402

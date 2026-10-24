@@ -558,6 +558,8 @@ class Hub:
                 audio, mime = self._synth(segment)
             except Exception as exc:  # noqa: BLE001 — the client's own voice takes over
                 print("[hud] TTS failed, client voice will be used: {}".format(exc))
+            if self.playing_id != uid:
+                return   # interrupted while synthesizing: don't play the rest
             self.emit({
                 "type": "audio", "id": uid, "seq": seq, "last": seq == len(segments) - 1,
                 "audio": audio, "mime": mime, "text": segment, "_to": "speaker",

@@ -124,6 +124,7 @@ class AudioEngine {
 
   // ── Spoken replies arrive sentence by sentence ────────────────────
   private utterance: number | null = null;
+  private stopped: number | null = null; // last utterance cut off by stop()
   private segments = new Map<number, { audio: string | null; text: string; last: boolean }>();
   private nextSeq = 0;
   private pumpingFor: number | null = null;
@@ -137,6 +138,7 @@ class AudioEngine {
 
   /** Queue one sentence of utterance `id`; a new id replaces the old one. */
   push(id: number, seq: number, b64: string | null, text: string, last: boolean) {
+    if (id === this.stopped) return; // the rest of a reply the user cut off
     if (id !== this.utterance) {
       if (this.fillerPlaying) this.utterance = null; // let "one moment" finish
       else this.stop();
@@ -238,6 +240,7 @@ class AudioEngine {
 
   /** Stop speaking now and drop the rest of the utterance. */
   stop() {
+    if (this.utterance !== null) this.stopped = this.utterance;
     this.utterance = null;
     this.segments.clear();
     this.stopSound();

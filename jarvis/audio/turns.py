@@ -46,10 +46,16 @@ class SpeechDetector:
     Silero is a recurrent model: carrying its state from one 32 ms frame to
     the next is what makes it steady (~0.95 through a whole word). Scoring
     frames in isolation, as faster-whisper's batch helper does, swings
-    between 0.1 and 0.9 inside a single syllable."""
+    between 0.1 and 0.9 inside a single syllable.
+
+    But carried forever (the mic streams all day), the state goes stale:
+    after minutes of quiet it barely reacts to speech, worst of all to
+    speech heard over Jarvis's voice, which echo cancellation leaves
+    choppy. So it starts afresh after every couple of seconds of quiet."""
 
     FRAME = 512
     CONTEXT = 64
+    QUIET_RESET = 62   # frames (~2 s) of quiet before starting afresh
 
     def __init__(self):
         self.session = None
@@ -67,6 +73,7 @@ class SpeechDetector:
         self._ctx = np.zeros(self.CONTEXT, dtype=np.float32)
         self._carry = np.zeros(0, dtype=np.float32)
         self._last = 0.0
+        self._quiet = 0
 
     def prob(self, chunk):
         if self.session is None:
@@ -83,6 +90,11 @@ class SpeechDetector:
             self._ctx = frame[-self.CONTEXT:]
             p = float(np.squeeze(out))
             best = p if best is None else max(best, p)
+            self._quiet = self._quiet + 1 if p < 0.1 else 0
+            if self._quiet >= self.QUIET_RESET:
+                self._h = np.zeros_like(self._h)
+                self._c = np.zeros_like(self._c)
+                self._quiet = 0
         self._carry = audio
         if best is not None:
             self._last = best
