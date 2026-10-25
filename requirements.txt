@@ -20,3 +20,6 @@ claude-agent-sdk>=0.1
 psutil>=5.9
 pypdf>=4.0
 websockets>=12
+
+# Whisper on the Apple GPU (Apple Silicon Macs only; used when STT_PROVIDER=auto)
+mlx-whisper>=0.4; sys_platform == "darwin" and platform_machine == "arm64"

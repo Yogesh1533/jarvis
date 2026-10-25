@@ -8,7 +8,7 @@ web search, and a persistent memory it maintains about you.
 - **Private by design** — the microphone is processed locally by
   [openWakeWord](https://github.com/dscripka/openWakeWord); no audio leaves
   your machine until the wake word fires. Speech-to-text runs locally too
-  (faster-whisper) unless you opt into a cloud provider.
+  (Whisper, on the Mac's GPU) unless you opt into a cloud provider.
 - **Safe by design** — sending email, editing meetings that have other
   attendees, and deleting anything require your **spoken confirmation**,
   enforced in code (the model physically cannot execute those actions
@@ -17,7 +17,8 @@ web search, and a persistent memory it maintains about you.
   [config/jarvis-voice-assistant-system-prompt.md](config/jarvis-voice-assistant-system-prompt.md).
   Edit it freely; no code changes needed.
 
-Brain: Claude (set `LLM_MODEL` in `.env`). TTS is pluggable: Piper (local,
+Brain: Claude Sonnet 5.5 by default, through your Claude plan (set
+`LLM_MODEL` and `LLM_BACKEND` in `.env`). TTS is pluggable: Piper (local,
 free, default, with a voice per mood), ElevenLabs, or OpenAI.
 
 ---
@@ -46,7 +47,7 @@ Open `.env` in any editor — the next sections tell you what to put in it.
 
 ## 3. Claude access — pick one backend
 
-**Option A — your Claude subscription (no API credits).** Set
+**Option A — your Claude subscription (no API credits; the default).**
 `LLM_BACKEND=agent-sdk` in `.env`. This routes Jarvis through the Claude
 Code CLI using your Claude Pro/Max login; usage counts against your plan.
 Needs Python 3.10+ and the CLI:
@@ -225,7 +226,12 @@ don't want the default.
 **OpenAI.** Create a key at <https://platform.openai.com/api-keys>, then set
 `TTS_PROVIDER=openai` and `OPENAI_API_KEY=...`.
 
-**Cloud speech-to-text (optional).** Local Whisper is the default. For the
+**Speech to text.** On Apple Silicon Macs, Jarvis runs Whisper large-v3-turbo
+on the GPU (`mlx-whisper`, in `requirements.txt`; the model downloads once,
+about 1.6 GB). On spoken commands with room noise it got 10.5% of words
+wrong versus 27% for the old `base.en` default, in about 0.4 s. Other Macs
+use `faster-whisper` on the CPU. Put names Jarvis should expect (contacts,
+artists, places) in `STT_VOCABULARY` in `.env`, comma-separated. For the
 OpenAI Whisper API instead, set `STT_PROVIDER=openai` (uses the same
 `OPENAI_API_KEY`).
 
@@ -317,7 +323,8 @@ that tries to set the confirmation flag itself.
 | Now playing is empty for YouTube Music | `brew install media-control`, then restart Jarvis. |
 | "What's on my screen" sees only the wallpaper | Allow Jarvis under System Settings → Privacy & Security → Screen Recording, then restart it. |
 | App stuck on "Starting the Jarvis server" | Look for a macOS prompt about iCloud Drive access and allow it; check `~/Library/Logs/Jarvis/server.log`. |
-| Slow transcription | Use `WHISPER_MODEL=tiny.en`, or `STT_PROVIDER=openai`. |
+| Jarvis mishears names or words | Add them to `STT_VOCABULARY` in `.env` (comma-separated), then restart. |
+| Slow transcription | On Apple Silicon, check Settings shows the GPU model (`pip install mlx-whisper`). Elsewhere use `WHISPER_MODEL=tiny.en` or `STT_PROVIDER=openai`. |
 | "piper CLI not found" | `pip install piper-tts` inside the venv, and download a voice (step 6). |
 | Google tool errors | Re-run `python -m jarvis setup-google`. |
 | Slow replies | Keep `LLM_EFFORT=low`; raise to `medium`/`high` for harder questions. |

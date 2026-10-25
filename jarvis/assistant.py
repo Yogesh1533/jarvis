@@ -81,10 +81,10 @@ class Assistant:
             tools=tools.TOOL_SCHEMAS,
             messages=self.messages,
             output_config={"effort": config.LLM_EFFORT},
-            # Fable 5's safety classifiers can decline benign requests;
-            # fall back to Opus in the same call instead of failing.
-            betas=["server-side-fallback-2026-06-01"],
-            fallbacks=[{"model": config.LLM_FALLBACK_MODEL}],
+            # Safety classifiers can decline benign requests; let the API
+            # retry on its recommended fallback model in the same call.
+            betas=["server-side-fallback-2026-07-01"],
+            fallbacks="default",
         )
 
     def chat(self, user_text):

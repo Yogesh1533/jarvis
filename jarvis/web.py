@@ -42,6 +42,7 @@ from pydantic import BaseModel
 
 from . import config, hud_bridge, moods, proactive, settings, tools
 from .assistant import Assistant
+from .audio import stt
 from .audio.turns import CHUNK, TurnDetector, ends_conversation, interruption, judge
 from .tools import history, media, reminders, timers
 from .voice import is_affirmative
@@ -102,7 +103,6 @@ class VoicePipeline:
     def load(self):
         """Load models in the background so the server starts instantly."""
         try:
-            from .audio import stt
             from .audio.turns import SpeechDetector
 
             stt.warm()
@@ -393,8 +393,6 @@ class VoicePipeline:
 
     # -- transcription ---------------------------------------------------
     def _transcribe(self, audio):
-        from .audio import stt
-
         try:
             return stt.transcribe(audio)
         except Exception as exc:  # noqa: BLE001
@@ -519,7 +517,7 @@ class Hub:
                 "backend": config.LLM_BACKEND,
                 "model": config.LLM_MODEL,
                 "tts": config.TTS_PROVIDER,
-                "stt": config.STT_PROVIDER,
+                "stt": stt.provider(),
                 "google": config.GOOGLE_TOKEN_PATH.exists(),
                 "tools": len(tools.TOOL_SCHEMAS),
             },

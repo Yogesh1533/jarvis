@@ -22,17 +22,18 @@ def _float(key: str, default: float) -> float:
 
 
 # LLM access
-# "api"       — Anthropic API key + credits (ANTHROPIC_API_KEY)
 # "agent-sdk" — your Claude subscription via the Claude Code CLI login
-LLM_BACKEND = os.getenv("LLM_BACKEND", "api")
-LLM_MODEL = os.getenv("LLM_MODEL", "claude-fable-5")
-LLM_FALLBACK_MODEL = os.getenv("LLM_FALLBACK_MODEL", "claude-opus-4-8")
+# "api"       — Anthropic API key + credits (ANTHROPIC_API_KEY)
+LLM_BACKEND = os.getenv("LLM_BACKEND", "agent-sdk")
+LLM_MODEL = os.getenv("LLM_MODEL", "claude-sonnet-5-5")
 LLM_EFFORT = os.getenv("LLM_EFFORT", "low")
 LLM_MAX_TOKENS = int(_float("LLM_MAX_TOKENS", 4096))
 
 # Speech to text
-STT_PROVIDER = os.getenv("STT_PROVIDER", "local")
-WHISPER_MODEL = os.getenv("WHISPER_MODEL", "base.en")
+STT_PROVIDER = os.getenv("STT_PROVIDER", "auto")   # auto | mlx | local | openai
+WHISPER_MODEL = os.getenv("WHISPER_MODEL", "base.en")   # faster-whisper (local)
+MLX_WHISPER_MODEL = os.getenv("MLX_WHISPER_MODEL", "mlx-community/whisper-large-v3-turbo")
+STT_VOCABULARY = os.getenv("STT_VOCABULARY", "")   # names/words to expect, comma-separated
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY", "")
 
 # Text to speech

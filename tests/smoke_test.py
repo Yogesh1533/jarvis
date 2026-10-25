@@ -176,10 +176,10 @@ check("tool_result fed back to model", any(
 ))
 req = fake.calls[0]
 check("request uses configured model", req["model"] == config.LLM_MODEL)
-check("request carries fallback config", req["fallbacks"] == [{"model": config.LLM_FALLBACK_MODEL}]
-      and req["betas"] == ["server-side-fallback-2026-06-01"])
+check("request carries fallback config", req["fallbacks"] == "default"
+      and req["betas"] == ["server-side-fallback-2026-07-01"])
 check("system prompt loaded from config file", "Jarvis" in req["system"][0]["text"])
-check("no thinking param sent (always-on for fable-5)", "thinking" not in req)
+check("no thinking param sent (adaptive by default)", "thinking" not in req)
 
 print("== affirmative parsing ==")
 check("'Yes.' is affirmative", is_affirmative("Yes."))
@@ -436,6 +436,21 @@ else:
     probs = [vad.prob(talkover[i:i + CHUNK]) for i in range(0, 25 * CHUNK, CHUNK)]
     heard = sum(p >= 0.6 for p in probs) / len(probs)
     check("speech over Jarvis is heard after a long quiet stretch ({:.0%})".format(heard), heard >= 0.3)
+
+print("== speech to text ==")
+from jarvis.audio import stt  # noqa: E402
+
+config.STT_VOCABULARY = "Sajjan Raj Vaidya, Bupa"
+check("the vocabulary primes Whisper", stt.prompt() == "Jarvis, Sajjan Raj Vaidya, Bupa.")
+real_choice, config.STT_PROVIDER = config.STT_PROVIDER, "auto"
+stt._provider = None
+real_machine, stt.platform.machine = stt.platform.machine, lambda: "x86_64"
+check("auto uses the CPU model off Apple Silicon", stt.provider() == "local")
+stt.platform.machine, stt._provider = real_machine, None
+if stt.provider() == "mlx" and vad.session is not None:
+    heard = stt.transcribe(talkover).lower()
+    check("the GPU model hears 'stop' through Jarvis's voice ({!r})".format(heard), "stop" in heard)
+config.STT_PROVIDER, stt._provider = real_choice, None
 
 print("== meeting alerts and the morning briefing ==")
 from datetime import datetime, timedelta, timezone  # noqa: E402

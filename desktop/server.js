@@ -66,6 +66,7 @@ class Server {
     fs.mkdirSync(this.logDir, { recursive: true });
     const log = fs.openSync(this.logFile, "a");
     onStatus("Starting the Jarvis server");
+    const started = Date.now();
     this.child = spawn(this.python(), ["-m", "jarvis", "web"], {
       cwd: this.root,
       env: { ...process.env, PYTHONUNBUFFERED: "1" },
@@ -75,6 +76,9 @@ class Server {
       this.child = null;
       fs.closeSync(log);
       if (this.stopping) return;
+      // A server that ran for a while and then stopped (restarted after an
+      // update, say) isn't crash-looping: start counting afresh.
+      if (Date.now() - started > 60_000) this.restarts = 0;
       // Crashed: try again with backoff, but don't spin forever.
       if (this.restarts++ < 5) {
         setTimeout(() => this.start(onStatus), 1500 * this.restarts);

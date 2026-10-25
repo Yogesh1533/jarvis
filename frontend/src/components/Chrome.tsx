@@ -565,7 +565,7 @@ export function SettingsDrawer() {
         <dl className="server-facts">
           <div><dt>Brain</dt><dd>{config.model} via {config.backend === "agent-sdk" ? "your Claude subscription" : "the Anthropic API"}</dd></div>
           <div><dt>Voice engine</dt><dd>{config.tts}</dd></div>
-          <div><dt>Speech to text</dt><dd>{config.stt === "local" ? "Whisper, on this Mac" : config.stt}</dd></div>
+          <div><dt>Speech to text</dt><dd>{{ mlx: "Whisper large-v3-turbo, on this Mac's GPU", local: "Whisper, on this Mac" }[config.stt] ?? config.stt}</dd></div>
           <div><dt>Wake word</dt><dd>{voice.wake ? `“${voice.wake_word}”, on this Mac` : voice.ready ? "Unavailable" : "Loading"}</dd></div>
           <div><dt>Google</dt><dd>{config.google ? "Connected" : <>Not connected. Run <code>python -m jarvis setup-google</code></>}</dd></div>
           <div><dt>Tools</dt><dd>{config.tools}</dd></div>

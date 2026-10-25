@@ -4,18 +4,18 @@
                         ┌─────────────────────────────────────────────┐
  mic ──► wake.py        │  assistant.py — the brain                   │
         (openWakeWord,  │                                             │
-         always local)  │  claude-fable-5 via Anthropic API           │
-            │ wake word │  (server-side fallback to claude-opus-4-8   │
-            ▼           │   if a request is safety-declined)          │
+         always local)  │  claude-sonnet-5-5 on your Claude plan      │
+            │ wake word │  (Claude Agent SDK; or the Anthropic API    │
+            ▼           │   with LLM_BACKEND=api)                     │
         recorder.py     │                                             │
         (turns.py: VAD  │  system prompt = config/*.md  +  memory/*.md│
          + semantic EoT)│  loaded fresh each session, prompt-cached   │
             │ int16 PCM │                                             │
             ▼           │        ┌── tool loop ──────────────┐        │
         stt.py ────────►│ text ─►│ tools/__init__.py dispatch │       │
-        (faster-whisper │        │  + CONFIRMATION GATE       │       │
-         local, or      │        └──────────┬────────────────┘        │
-         OpenAI API)    └───────────────────┼─────────────────────────┘
+        (Whisper turbo  │        │  + CONFIRMATION GATE       │       │
+         on the GPU, or │        └──────────┬────────────────┘        │
+         CPU / OpenAI)  └───────────────────┼─────────────────────────┘
                                             │
             ┌────────────┬──────────┬───────┴────┬────────────┬───────────┐
             ▼            ▼          ▼            ▼            ▼           ▼
@@ -146,7 +146,7 @@ privileges. The microphone is granted only to the local server's origin.
 | Config | `jarvis/config.py`, `.env` | All keys, paths, and timings. Nothing sensitive in code. |
 | Wake word | `audio/wake.py` | openWakeWord `hey_jarvis` model, ONNX runtime, 80 ms frames at 16 kHz. Runs continuously; nothing is recorded or sent anywhere until it fires. |
 | Turn-taking | `audio/turns.py`, `audio/recorder.py` | Silero VAD + transcript-based end-of-turn (see above). |
-| STT | `audio/stt.py` | `faster-whisper` locally (default) or OpenAI Whisper API (`STT_PROVIDER=openai`). |
+| STT | `audio/stt.py` | Whisper large-v3-turbo on the Apple GPU via `mlx-whisper` (default on Apple Silicon), `faster-whisper` on the CPU elsewhere, or the OpenAI Whisper API (`STT_PROVIDER=openai`). `STT_VOCABULARY` primes it with names to expect. |
 | Brain | `jarvis/assistant.py` | Multi-turn conversation, manual tool loop, prompt caching (`cache_control` on the system block), refusal handling with server-side model fallback. |
 | Tools | `jarvis/tools/*` | Schemas + dispatcher in `tools/__init__.py`; one module per capability. |
 | TTS | `audio/tts.py` | Piper in-process (voices cached, ~50 ms per sentence once loaded; speed/volume from the mood), ElevenLabs, or OpenAI — selected by `TTS_PROVIDER`. |
@@ -185,9 +185,10 @@ result to the model, which reports back and moves on.
 
 ## Two LLM backends
 
-`LLM_BACKEND` in `.env` selects how the brain reaches Claude:
+`LLM_BACKEND` in `.env` selects how the brain reaches Claude. Both use
+`LLM_MODEL`, default `claude-sonnet-5-5`.
 
-- **`agent-sdk`** — `jarvis/agent_backend.py` drives the Claude Code CLI
+- **`agent-sdk`** (default) — `jarvis/agent_backend.py` drives the Claude Code CLI
   through the Claude Agent SDK, authenticating with the user's Claude
   subscription login (no API credits). Jarvis's tools are registered as
   an in-process MCP server; every call still flows through
@@ -196,17 +197,18 @@ result to the model, which reports back and moves on.
   disallowed. The SDK is async, so the backend runs a private event loop
   on a daemon thread behind the same synchronous `chat()` interface.
 - **`api`** — the original path in `assistant.py`: the Anthropic SDK,
-  pay-per-token, with the notes below.
+  pay-per-token with an API key, with the notes below.
 
 ## Anthropic API usage notes (`LLM_BACKEND=api`)
 
-- Model `claude-fable-5`; reasoning is always on for this model, depth is
-  tuned with `output_config.effort` (default `low` for snappy voice
-  replies — configurable).
-- `betas=["server-side-fallback-2026-06-01"]` + `fallbacks=[{"model":
-  "claude-opus-4-8"}]`: if Fable's safety classifiers decline a benign
-  request, the same call is transparently served by Opus instead of
-  failing.
+- Model `claude-sonnet-5-5` (`LLM_MODEL`); thinking is adaptive, and its
+  depth is tuned with `output_config.effort` (default `low` for snappy
+  voice replies — configurable).
+- `betas=["server-side-fallback-2026-07-01"]` + `fallbacks="default"`: if
+  a safety classifier declines a benign request, the same call is served
+  by the fallback model Anthropic recommends for that kind of decline
+  instead of failing. If the whole chain declines, the turn is dropped
+  from history and Jarvis says so.
 - The system prompt (personality + memories) is byte-stable for the whole
   session and marked with `cache_control: ephemeral`, so repeated turns
   read it from the prompt cache. The current timestamp is injected into
