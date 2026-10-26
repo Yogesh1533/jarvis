@@ -811,6 +811,22 @@ check("'default' restores the .env model", not err and _settings.model_id() == c
 _settings.update(model="")
 check("empty model returns to the default", _settings.model_id() == config.LLM_MODEL)
 
+print("== prompt memory budget ==")
+text, full = memory.load_for_prompt()
+check("small memory sets load in full", full and "favorite-editor" in text and "---" in text)
+real_budget = config.MEMORY_PRELOAD_CHARS
+config.MEMORY_PRELOAD_CHARS = len(memory.load_all()) - 1
+text, full = memory.load_for_prompt()
+check("over budget loads an index, not the bodies", not full and "favorite-editor:" in text and "---" not in text)
+config.MEMORY_PRELOAD_CHARS = 5
+text, full = memory.load_for_prompt()
+check("the index itself is capped", not full and len(text) < 60)
+config.MEMORY_PRELOAD_CHARS = len(memory.load_all()) - 1
+from jarvis.assistant import build_system_prompt
+check("system prompt points at recall when indexed", "index only" in build_system_prompt() and "recall" in build_system_prompt())
+config.MEMORY_PRELOAD_CHARS = real_budget
+check("system prompt carries full memories again under budget", "index only" not in build_system_prompt())
+
 print("== web search (live, needs network) ==")
 try:
     from jarvis.tools import websearch

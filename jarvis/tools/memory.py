@@ -75,6 +75,20 @@ def load_all():
     return "\n\n".join(parts)
 
 
+def load_for_prompt():
+    """Memories for the session-start system prompt. Everything while it fits in
+    MEMORY_PRELOAD_CHARS; past that, a one-line index (name: summary) and the
+    model fetches details with `recall` / `memory_read`. Returns (text, full)."""
+    full = load_all()
+    if len(full) <= config.MEMORY_PRELOAD_CHARS:
+        return full, True
+    lines = ["- {}: {}".format(m["name"], m["summary"]) for m in items()]
+    index = "\n".join(lines)
+    if len(index) > config.MEMORY_PRELOAD_CHARS:
+        index = index[: config.MEMORY_PRELOAD_CHARS].rsplit("\n", 1)[0] + "\n- …(more; use recall)"
+    return index, False
+
+
 def items():
     """All memories as {name, summary, content} for the HUD memory panel."""
     if not config.MEMORY_DIR.is_dir():

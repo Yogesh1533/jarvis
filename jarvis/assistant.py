@@ -19,9 +19,15 @@ def build_system_prompt():
             )
         )
     text = config.SYSTEM_PROMPT_PATH.read_text(encoding="utf-8")
-    memories = memory.load_all()
-    if memories:
+    memories, full = memory.load_for_prompt()
+    if memories and full:
         text += "\n\n## Your saved memories\n\n" + memories
+    elif memories:
+        text += (
+            "\n\n## Your saved memories (index only)\n\n"
+            "There are too many to list in full. Use `recall` to search them or "
+            "`memory_read` to open one by name.\n\n" + memories
+        )
     return text
 
 
