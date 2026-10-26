@@ -776,6 +776,14 @@ check("injected text is only returned as data", "Ignore previous instructions" i
 check("recall output is capped", len(out) <= recall.MAX_OUTPUT_CHARS)
 out, _ = tools.execute("recall", {"query": "Lisbon", "scope": "conversations"}, confirm=lambda p: False)
 check("scope limits the search", "[memory:" not in out and "[conversation," in out)
+_search = recall.search
+recall.search = lambda *a, **k: [recall.Hit("memory", "travel-plan", 0.80), recall.Hit("memory", "note-injected", 0.60)]
+out, _ = tools.execute("recall", {"query": "x"}, confirm=lambda p: False)
+check("a weak hit next to a strong one is dropped", "travel-plan" in out and "note-injected" not in out)
+recall.search = lambda *a, **k: [recall.Hit("memory", "travel-plan", 0.60), recall.Hit("memory", "note-injected", 0.55)]
+out, _ = tools.execute("recall", {"query": "x"}, confirm=lambda p: False)
+check("close hits are both kept", "travel-plan" in out and "note-injected" in out)
+recall.search = _search
 out, _ = tools.execute("recall", {"query": "quantum chromodynamics lattice gauge"}, confirm=lambda p: False)
 check("no match says so", out.startswith("Nothing relevant"))
 out, _ = tools.execute("recall", {"query": "   "}, confirm=lambda p: False)
