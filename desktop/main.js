@@ -24,6 +24,11 @@ let win = null;
 let tray = null;
 let layout = "full";
 let quitting = false;
+// Switching to another app shrinks the full HUD to the orb (setting, default on).
+let autoOrb = loadState().autoOrb !== false;
+let autoOrbed = false; // the orb is showing because we collapsed it, not because you chose it
+let blurTimer = null;
+let armedAt = 0; // ignore focus changes while the app is still starting up
 const server = new Server(ROOT);
 
 // ── Remembered window state ───────────────────────────────────────
@@ -89,6 +94,20 @@ function createWindow() {
     if (isLocal(url)) setTimeout(() => win && win.loadURL(hudUrl()), 2000);
   });
 
+  // Leaving Jarvis for another app or window: show the orb instead.
+  win.on("blur", () => {
+    clearTimeout(blurTimer);
+    if (!autoOrb || layout !== "full" || !win.isVisible() || win.isMinimized()) return;
+    if (Date.now() < armedAt) return;
+    // Wait a beat: a menu or dialog briefly takes focus and hands it back.
+    blurTimer = setTimeout(() => {
+      if (!win || layout !== "full" || BrowserWindow.getFocusedWindow()) return;
+      applyLayout("orb", { auto: true });
+      win.showInactive();
+    }, 300);
+  });
+  win.on("focus", () => clearTimeout(blurTimer));
+
   win.on("close", (e) => {
     if (!quitting) {
       e.preventDefault(); // keep listening from the menu bar
@@ -111,12 +130,14 @@ function orbBounds() {
   return { x: area.x + area.width - ORB.width - 24, y: area.y + area.height - ORB.height - 24, ...ORB };
 }
 
-function applyLayout(next, { notify = true, initial = false } = {}) {
+function applyLayout(next, { notify = true, initial = false, auto = false } = {}) {
   if (!win) return;
   if (!initial && layout === "full") saveState({ full: win.getBounds() });
   if (!initial && layout === "orb") saveState({ orb: win.getBounds() });
   layout = next;
-  saveState({ layout });
+  autoOrbed = auto && next === "orb";
+  // An automatic orb isn't remembered as your choice: relaunching opens the full HUD.
+  saveState({ layout: autoOrbed ? "full" : layout });
   if (win.isSimpleFullScreen()) win.setSimpleFullScreen(false);
   if (layout === "orb") {
     win.setWindowButtonVisibility(false);
@@ -145,6 +166,14 @@ function show({ focus = true } = {}) {
   }
 }
 
+/** Coming back to Jarvis (Dock icon, "Show Jarvis", switching to it) opens the
+ * full HUD again, if the orb was only there because you left. */
+function expandIfAutomatic() {
+  if (!autoOrbed || layout !== "orb") return;
+  applyLayout("full");
+  show();
+}
+
 /** ⌘J: bring Jarvis up and start listening. The orb doesn't steal focus,
  * so you can keep typing in whatever you were using. */
 function summon() {
@@ -164,10 +193,20 @@ function refreshTray() {
   tray.setContextMenu(
     Menu.buildFromTemplate([
       { label: "Talk to Jarvis", accelerator: SUMMON, click: summon },
-      { label: "Show Jarvis", click: () => show() },
+      { label: "Show Jarvis", click: () => { expandIfAutomatic(); show(); } },
       { type: "separator" },
       { label: "Full interface", type: "radio", checked: layout === "full", click: () => { applyLayout("full"); show(); } },
       { label: "Floating orb", type: "radio", checked: layout === "orb", accelerator: TOGGLE, click: () => { applyLayout("orb"); show({ focus: false }); } },
+      {
+        label: "Orb when I switch to another app",
+        type: "checkbox",
+        checked: autoOrb,
+        click: (item) => {
+          autoOrb = item.checked;
+          saveState({ autoOrb });
+          refreshTray();
+        },
+      },
       { type: "separator" },
       {
         label: "Launch at login",
@@ -247,12 +286,25 @@ if (!app.requestSingleInstanceLock()) {
     try {
       await server.ensure(status);
       await win.loadURL(hudUrl());
+      armedAt = Date.now() + 3000;
     } catch (err) {
       status(String(err.message || err));
     }
   });
 
-  app.on("activate", () => show());
+  app.on("activate", () => {
+    expandIfAutomatic();
+    show();
+  });
+  // Switching back to Jarvis (⌘Tab, Mission Control) opens the HUD, but clicking
+  // the orb itself, which also activates the app, must not.
+  app.on("did-become-active", () => {
+    if (!win || !autoOrbed || layout !== "orb") return;
+    const p = screen.getCursorScreenPoint();
+    const b = win.getBounds();
+    const onOrb = p.x >= b.x && p.x <= b.x + b.width && p.y >= b.y && p.y <= b.y + b.height;
+    if (!onOrb) expandIfAutomatic();
+  });
   app.on("before-quit", () => {
     quitting = true;
   });

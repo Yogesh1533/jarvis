@@ -153,7 +153,12 @@ for this Mac. Open it from Spotlight. Then:
 - **⌘J** anywhere: Jarvis appears and listens (or stops talking).
 - **⌘⇧J**: switch between the full interface and a small floating orb
   that stays on top of your other windows without taking focus.
-- Menu-bar icon: talk, show, orb/full, **Launch at login**, server log, quit.
+- **Switch to another app** and the full interface shrinks to the orb by
+  itself, so Jarvis stays in view while you work. Come back through the
+  Dock, "Show Jarvis" or ⌘Tab and the full interface returns; clicking the
+  orb itself doesn't expand it. Turn this off with "Orb when I switch to
+  another app" in the menu-bar icon.
+- Menu-bar icon: talk, show, orb/full, orb-on-switch, **Launch at login**, server log, quit.
   Closing the window keeps Jarvis listening in the menu bar.
 
 The first launch asks for the microphone, and macOS may ask to let Jarvis
