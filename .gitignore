@@ -14,3 +14,7 @@ frontend/dist/
 *.tsbuildinfo
 desktop/node_modules
 desktop/out.nosync/
+
+# Private to the author: demo/filming helpers, slide deck
+scripts/
+presentation/
