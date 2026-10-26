@@ -1,5 +1,5 @@
 """Jarvis's own voice and behaviour, changeable by asking."""
-from .. import moods, settings
+from .. import config, moods, settings
 
 _LABELS = {
     "patience": "how long I wait when you pause",
@@ -28,6 +28,21 @@ def set_voice(voice):
     return "Voice set to {} (the mood's pace and style still apply).".format(
         moods.VOICE_LABELS.get(voice, voice)
     )
+
+
+def set_model(model):
+    """Switch Claude model by name or family ("opus", "haiku", "default")."""
+    key = (model or "").strip().lower()
+    if key in ("", "default", "normal", "standard", "original"):
+        settings.update(model="")
+        return "Back to the default model, {}. It applies from my next reply.".format(
+            settings.MODELS.get(config.LLM_MODEL, config.LLM_MODEL))
+    matches = [m for m in settings.MODELS if key == m or key in m.replace("claude-", "").split("-")]
+    if len(matches) != 1:
+        raise ValueError("Say one of: {}, or default.".format(", ".join(
+            m.replace("claude-", "").split("-")[0] for m in settings.MODELS)))
+    settings.update(model=matches[0])
+    return "Switched to {}. It applies from my next reply.".format(settings.MODELS[matches[0]])
 
 
 def list_options():

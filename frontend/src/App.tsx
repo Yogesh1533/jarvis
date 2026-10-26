@@ -37,7 +37,7 @@ audio.onDone((id) => link.send({ type: "playback_done", id }));
 function applySettings(msg: ServerMsg) {
   useStore.getState().set({
     server: msg.settings,
-    persona: { moods: msg.moods, voices: msg.voices, voice: msg.voice },
+    persona: { moods: msg.moods, voices: msg.voices, voice: msg.voice, models: msg.models || {}, default_model: msg.default_model || "" },
   });
 }
 

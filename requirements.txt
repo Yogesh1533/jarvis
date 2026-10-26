@@ -19,6 +19,7 @@ piper-tts>=1.2
 claude-agent-sdk>=0.1
 psutil>=5.9
 pypdf>=4.0
+fastembed>=0.9,<1   # local embeddings for semantic recall
 websockets>=12
 
 # Whisper on the Apple GPU (Apple Silicon Macs only; used when STT_PROVIDER=auto)

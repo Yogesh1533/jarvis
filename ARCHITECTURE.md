@@ -135,7 +135,10 @@ An Electron shell around the same HUD: `server.js` starts
 only ever stops one it started, restarting it on crashes); `main.js` owns
 one transparent window that switches between the full HUD and a floating,
 always-on-top orb, the menu-bar icon, launch-at-login, and the global
-shortcuts (⌘J summon/listen, ⌘⇧J orb/full). `preload.js` exposes four
+shortcuts (⌘J summon/listen, ⌘⇧J orb/full). When the window loses focus
+in full layout (a 300 ms debounce, and not during startup) it collapses to
+the orb; coming back through the Dock, the menu or ⌘Tab expands it again,
+but only if the orb was collapsed automatically. A tray checkbox turns it off. `preload.js` exposes four
 calls to the page as `window.jarvisDesktop`; the page needs no other
 privileges. The microphone is granted only to the local server's origin.
 

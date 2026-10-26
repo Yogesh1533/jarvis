@@ -24,6 +24,15 @@ DEFAULTS = {
     "conversation": "open",  # after replying, keep listening briefly or for a while
     "meeting_alerts": "5",   # minutes of warning before calendar events, or "off"
     "briefing": "07:00",     # morning briefing from this time, or "off"
+    "model": "",             # Claude model for the next reply; "" = LLM_MODEL from .env
+}
+
+# Models offered in the HUD picker (id -> label). Switching applies from the next reply.
+MODELS = {
+    "claude-sonnet-5-5": "Sonnet 5.5 · balanced",
+    "claude-opus-5-5": "Opus 5.5 · deepest",
+    "claude-haiku-5-5": "Haiku 5.5 · fastest",
+    "claude-fable-5-1": "Fable 5.1",
 }
 
 CHOICES = {
@@ -41,6 +50,11 @@ WAKE_THRESHOLDS = {"low": 0.65, "high": 0.32}
 # Seconds Jarvis keeps listening for a follow-up after it replies.
 # "brief" honours FOLLOWUP_WINDOW from .env.
 CONVERSATION_WINDOW = {"open": 20.0}
+
+
+def model_id():
+    """The model to use for the next reply: the HUD's pick, else .env's LLM_MODEL."""
+    return get()["model"] or config.LLM_MODEL
 
 
 def wake_threshold():
@@ -98,6 +112,8 @@ def update(**changes):
                 value = "{:02d}:{}".format(int(m.group(1)), m.group(2))
         elif key in CHOICES and value not in CHOICES[key]:
             raise ValueError("{} must be one of: {}".format(key, ", ".join(CHOICES[key])))
+        elif key == "model" and value and value not in MODELS:
+            raise ValueError("model must be one of: {}".format(", ".join(MODELS)))
         elif key == "mood" and value not in moods.MOODS:
             raise ValueError("mood must be one of: {}".format(", ".join(moods.MOODS)))
         elif key == "voice" and value and value not in moods.installed_voices():

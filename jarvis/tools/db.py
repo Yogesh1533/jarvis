@@ -30,6 +30,16 @@ CREATE TABLE IF NOT EXISTS conversation (
     text TEXT NOT NULL,
     created_at TEXT NOT NULL DEFAULT (datetime('now', 'localtime'))
 );
+CREATE TABLE IF NOT EXISTS embeddings (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    kind TEXT NOT NULL,
+    ref TEXT NOT NULL,
+    text_hash TEXT NOT NULL,
+    model TEXT NOT NULL,
+    vector BLOB NOT NULL,
+    created_at TEXT NOT NULL DEFAULT (datetime('now', 'localtime')),
+    UNIQUE (kind, ref)
+);
 """
 
 
