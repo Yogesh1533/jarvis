@@ -44,7 +44,7 @@ from . import config, hud_bridge, moods, proactive, settings, tools
 from .assistant import Assistant
 from .audio import stt
 from .audio.turns import CHUNK, TurnDetector, ends_conversation, interruption, judge
-from .tools import history, media, reminders, timers
+from .tools import history, media, recall, reminders, timers
 from .voice import is_affirmative
 
 FRONTEND_DIST = config.ROOT / "frontend" / "dist"
@@ -879,6 +879,7 @@ async def lifespan(_app):
     hud_bridge.attach(hub.to_hud)
     reminders.start_scheduler(lambda msg: hub.announce("reminder", "Reminder: " + msg))
     timers.set_notifier(lambda label: hub.announce("timer", "Your {} is done.".format(label)))
+    recall.warm()   # embedder + index catch-up, off the main thread
     proactive.Proactive(hub).start()   # meeting alerts, morning briefing
     threading.Thread(target=hub.voice.load, daemon=True, name="hud-voice-load").start()
     # Now playing (YouTube Music, Spotify...) pushed live to every window.

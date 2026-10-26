@@ -1,6 +1,6 @@
 """Text-only chat mode: same brain, no audio stack. For testing and quiet use."""
 from .assistant import Assistant
-from .tools import reminders, timers
+from .tools import recall, reminders, timers
 
 
 def run():
@@ -8,6 +8,7 @@ def run():
         answer = input("\n[CONFIRM] {} [yes/no]: ".format(prompt)).strip().lower()
         return answer in ("y", "yes")
 
+    recall.warm()
     assistant = Assistant(confirm=text_confirm)
     reminders.start_scheduler(lambda msg: print("\n[REMINDER] {}".format(msg)))
     timers.set_notifier(lambda label: print("\n[TIMER] {} is done".format(label)))

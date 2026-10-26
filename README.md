@@ -304,6 +304,21 @@ binary; if it can't hear you, run it once from Terminal first.
 `C:\...\jarvis\.venv\Scripts\python.exe` with arguments `-m jarvis voice`
 and *Start in* set to the project folder.
 
+## 8b. Memory recall
+
+Jarvis can find things you told it, or discussed, weeks ago by meaning, not
+exact words ("what hotel did we pick for Lisbon?"). It uses a small local
+embedding model (`fastembed`, about 64 MB, downloaded once to
+`~/.cache/jarvis/models`); nothing is sent anywhere. The first launch builds
+the index in the background, so give it a few seconds. Settings in `.env`:
+`RECALL_INDEX_TURNS=0` stops indexing conversations, `RECALL_MIN_SCORE`
+tunes how close a match must be, and `MEMORY_PRELOAD_CHARS` caps how much
+memory goes into each session's prompt before it switches to an index.
+Without `fastembed` installed, recall falls back to keyword search.
+
+You can also switch Claude model (Sonnet, Opus, Haiku) from Settings in the
+HUD, or by saying "use Opus" / "back to the default model".
+
 ## 9. Tests
 
 ```bash

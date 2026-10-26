@@ -185,6 +185,36 @@ def reindex_turns():
     return {"indexed": indexed, "removed": len(orphans)}
 
 
+_warm_thread = None
+
+
+def warm():
+    """At startup, load the embedder and bring the index up to date (new or
+    edited memories, history from before this feature) on a background thread,
+    so the first `recall` doesn't wait and nothing blocks startup. Safe to call
+    more than once; returns the thread (tests join it)."""
+    global _warm_thread
+    with _worker_lock:
+        if _warm_thread is not None and _warm_thread.is_alive():
+            return _warm_thread
+
+        def work():
+            from . import memory
+
+            if not embeddings.available():
+                print("[recall] fastembed not installed: recall uses keyword search")
+                return
+            try:
+                m, t = memory.reindex(), reindex_turns()
+                print("[recall] index ready (memories +{}, conversation +{})".format(m["indexed"], t["indexed"]))
+            except Exception as exc:  # noqa: BLE001 — recall falls back to keywords
+                print("[recall] couldn't build the index: {}".format(exc))
+
+        _warm_thread = threading.Thread(target=work, daemon=True, name="recall-warm")
+        _warm_thread.start()
+    return _warm_thread
+
+
 # -- the `recall` tool -------------------------------------------------------
 # Read-only: it returns text for the model and changes nothing, so it needs no
 # confirmation. Everything it returns is data from the user's own past, never
