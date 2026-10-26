@@ -81,7 +81,7 @@ FILES_ROOTS = [
 # outside the project because the project sits in iCloud, which evicts files.
 EMBED_MODEL = os.getenv("EMBED_MODEL", "BAAI/bge-small-en-v1.5")
 EMBED_CACHE_DIR = _path("EMBED_CACHE_DIR", "~/.cache/jarvis/models")
-RECALL_MIN_SCORE = _float("RECALL_MIN_SCORE", 0.45)   # cosine; below this is "not relevant"
+RECALL_MIN_SCORE = _float("RECALL_MIN_SCORE", 0.50)   # cosine; below this is "not relevant"
 RECALL_INDEX_TURNS = os.getenv("RECALL_INDEX_TURNS", "1") != "0"
 MEMORY_PRELOAD_CHARS = int(_float("MEMORY_PRELOAD_CHARS", 6000))
 
