@@ -1,7 +1,7 @@
 """The always-on voice loop: wake word -> listen -> think -> speak -> follow-up."""
 from . import config
 from .assistant import Assistant
-from .tools import reminders, timers
+from .tools import recall, reminders, timers
 
 _AFFIRMATIVE = {
     "yes", "yeah", "yep", "yup", "sure", "confirm", "confirmed", "affirmative",
@@ -30,6 +30,7 @@ def run():
         print("  [confirm] you said: {!r}".format(answer))
         return is_affirmative(answer)
 
+    recall.warm()
     assistant = Assistant(confirm=voice_confirm)
     reminders.start_scheduler(lambda msg: tts.speak("Reminder: " + msg))
     timers.set_notifier(lambda label: tts.speak("Your {} is done.".format(label)))

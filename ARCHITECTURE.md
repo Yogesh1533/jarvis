@@ -160,7 +160,8 @@ privileges. The microphone is granted only to the local server's origin.
 | Files | `tools/files.py` | Spotlight search, read (text/PDF) and open, confined to `FILES_ROOTS`. |
 | Weather, news, pages | `tools/weather.py`, `tools/websearch.py` | Open-Meteo (no key), DuckDuckGo news, readable-text page fetch. |
 | Timers, briefing, vitals | `tools/timers.py`, `tools/briefing.py`, `tools/system.py` | In-memory timers; one-call daily briefing; psutil vitals for gauges. |
-| Memory | `tools/memory.py` | One markdown file per fact in `memory/`, first line is the summary. All memories are appended to the system prompt at session start; the model writes new ones through `memory_save`. |
+| Memory | `tools/memory.py` | One markdown file per fact in `memory/`, first line is the summary. Memories are appended to the system prompt at session start while they fit in `MEMORY_PRELOAD_CHARS`; past that, only a name: summary index goes in. The model writes new ones through `memory_save`. |
+| Semantic recall | `embeddings.py`, `tools/recall.py` | The `recall` tool searches memories and past exchanges by meaning. Local `fastembed` (`BAAI/bge-small-en-v1.5`, 384 dims, CPU), vectors stored as normalized float32 BLOBs in the `embeddings` table of `jarvis.db`, search is one numpy matrix product. Nothing leaves the Mac. The index is derived data: memory files and the `conversation` table stay the source of truth, and `recall.warm()` rebuilds or catches it up in the background at startup. Turns are embedded on a worker thread so logging never waits. Read-only, so it needs no confirmation; results are framed as reference data, not instructions, and capped at ~1,200 characters. Without `fastembed` it falls back to keyword search. |
 
 ## The confirmation gate (enforced in code, not in the prompt)
 
@@ -223,7 +224,8 @@ result to the model, which reports back and moves on.
 .env                  secrets and settings (git-ignored)
 config/…prompt.md     editable personality + permission tiers
 memory/*.md           one fact per file (git-ignored)
-data/jarvis.db        tasks + reminders (SQLite, git-ignored)
+data/jarvis.db        tasks, reminders, history, recall vectors (SQLite, git-ignored)
+~/.cache/jarvis/models  embedding model, ~64 MB (outside the project, so iCloud never syncs it)
 data/google_token.json OAuth refresh token (git-ignored)
 data/voices/*.onnx    Piper voice models
 ```

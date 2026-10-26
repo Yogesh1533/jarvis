@@ -827,6 +827,25 @@ check("system prompt points at recall when indexed", "index only" in build_syste
 config.MEMORY_PRELOAD_CHARS = real_budget
 check("system prompt carries full memories again under budget", "index only" not in build_system_prompt())
 
+print("== startup warm-up ==")
+recall.purge("memory"); recall.purge("turn")
+memory.save("warm-fact", "Likes green tea", "Drinks green tea every morning.")
+recall.purge("memory")                      # as if the index were missing
+history.add("user", "remind me what tea I drink in the morning")
+history.add("jarvis", "You drink green tea every morning.")
+recall.flush(timeout=10); recall.purge("turn")
+recall.warm().join(timeout=10)
+check("warm-up rebuilds the memory index", recall.count("memory") >= 1)
+check("warm-up backfills past exchanges", recall.count("turn") == 1)
+t1 = recall.warm(); t1.join(timeout=10)
+check("a second warm-up changes nothing", recall.count("turn") == 1)
+embeddings.available = lambda: False
+recall.warm().join(timeout=10)
+check("warm-up without the library does not raise", True)
+embeddings.available = real_available
+memory.delete("warm-fact", _confirmed=True)
+history.clear()
+
 print("== web search (live, needs network) ==")
 try:
     from jarvis.tools import websearch
