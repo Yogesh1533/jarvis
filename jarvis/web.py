@@ -504,6 +504,8 @@ class Hub:
             "moods": {k: {"label": m["label"], "blurb": m["blurb"]} for k, m in moods.MOODS.items()},
             "voices": moods.installed_voices(),
             "voice": moods.current()["voice"],
+            "models": settings.MODELS,
+            "default_model": config.LLM_MODEL,
         }
 
     def hello(self):
@@ -515,7 +517,7 @@ class Hub:
             "settings": self.settings_msg(),
             "config": {
                 "backend": config.LLM_BACKEND,
-                "model": config.LLM_MODEL,
+                "model": settings.model_id(),
                 "tts": config.TTS_PROVIDER,
                 "stt": stt.provider(),
                 "google": config.GOOGLE_TOKEN_PATH.exists(),

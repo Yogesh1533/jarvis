@@ -5,7 +5,7 @@ or tests interchangeably.
 """
 from datetime import datetime
 
-from . import config, tools
+from . import config, settings, tools
 from .tools import memory
 
 _MAX_TOOL_ROUNDS = 12
@@ -75,7 +75,7 @@ class Assistant:
 
     def _request(self):
         return self.client.beta.messages.create(
-            model=config.LLM_MODEL,
+            model=settings.model_id(),
             max_tokens=config.LLM_MAX_TOKENS,
             system=self.system,
             tools=tools.TOOL_SCHEMAS,

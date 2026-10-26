@@ -60,12 +60,15 @@ export interface ServerSettings {
   fillers: boolean;
   speak: boolean;
   auto_mood: boolean;
+  model: string; // "" = the default from .env
 }
 
 export interface Persona {
   moods: Record<string, { label: string; blurb: string }>;
   voices: Record<string, string>;
   voice: string; // the voice actually in use
+  models: Record<string, string>;
+  default_model: string;
 }
 
 /** What's playing on the Mac (any app: YouTube Music, Spotify...). */
@@ -125,7 +128,7 @@ function loadLocal(): LocalSettings {
 
 const SERVER_DEFAULTS: ServerSettings = {
   theme: "arc", mood: "classic", voice: "", patience: "balanced",
-  barge_in: true, wake: "normal", conversation: "open", meeting_alerts: "5", briefing: "07:00", fillers: true, speak: true, auto_mood: false,
+  barge_in: true, wake: "normal", conversation: "open", meeting_alerts: "5", briefing: "07:00", fillers: true, speak: true, auto_mood: false, model: "",
 };
 
 let seq = 1;
@@ -180,7 +183,7 @@ export const useStore = create<State>((set, get) => ({
   cards: [],
   local: loadLocal(),
   server: SERVER_DEFAULTS,
-  persona: { moods: {}, voices: {}, voice: "" },
+  persona: { moods: {}, voices: {}, voice: "", models: {}, default_model: "" },
   refresh: { agenda: 0, mail: 0, tasks: 0, reminders: 0, timers: 0, memory: 0, system: 0, media: 0 },
   drawer: null,
   palette: false,

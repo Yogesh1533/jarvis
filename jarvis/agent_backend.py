@@ -11,7 +11,7 @@ import asyncio
 import os
 import threading
 
-from . import config, tools
+from . import config, settings, tools
 
 _BUILTIN_TOOLS_OFF = [
     "Bash", "Read", "Write", "Edit", "Glob", "Grep", "WebFetch", "WebSearch",
@@ -24,6 +24,7 @@ class AgentBackend:
         self.confirm = confirm
         self.system_prompt = system_prompt
         self._client = None
+        self._model = None
         # The standalone CLI installs to ~/.local/bin; make sure the SDK
         # finds it even when launched from launchd/preview contexts.
         os.environ["PATH"] = (
@@ -81,7 +82,7 @@ class AgentBackend:
         )
         options = ClaudeAgentOptions(
             system_prompt=self.system_prompt,
-            model=config.LLM_MODEL,
+            model=settings.model_id(),
             cwd=str(config.ROOT),
             mcp_servers={"jarvis": server},
             allowed_tools=[
@@ -91,6 +92,7 @@ class AgentBackend:
             disallowed_tools=_BUILTIN_TOOLS_OFF,
             max_turns=24,
         )
+        self._model = options.model
         self._client = ClaudeSDKClient(options=options)
         await self._client.connect()
         return self._client
@@ -99,6 +101,10 @@ class AgentBackend:
         from claude_agent_sdk import AssistantMessage, TextBlock
 
         client = await self._ensure_client()
+        wanted = settings.model_id()
+        if wanted != self._model:   # picked in the HUD since the last reply
+            await client.set_model(wanted)
+            self._model = wanted
         from .assistant import stamp
 
         await client.query(stamp(user_text))

@@ -472,6 +472,20 @@ export function SettingsDrawer() {
       </fieldset>
 
       <fieldset className="setting">
+        <legend>Model</legend>
+        <label className="select-row">
+          <span>Claude model</span>
+          <select value={server.model} onChange={(e) => setServer({ model: e.target.value })}>
+            <option value="">Default ({persona.models[persona.default_model] || persona.default_model})</option>
+            {Object.entries(persona.models).map(([id, label]) => (
+              <option key={id} value={id}>{label}</option>
+            ))}
+          </select>
+        </label>
+        <p className="fine">Takes effect from the next reply. Opus thinks deepest but uses more of your plan; Haiku is quickest.</p>
+      </fieldset>
+
+      <fieldset className="setting">
         <legend>Voice</legend>
         <label className="select-row">
           <span>Speaking voice</span>
