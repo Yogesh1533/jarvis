@@ -476,13 +476,15 @@ export function SettingsDrawer() {
         <label className="select-row">
           <span>Model</span>
           <select value={server.model} onChange={(e) => setServer({ model: e.target.value })}>
-            <option value="">Default ({persona.models[persona.default_model] || persona.default_model})</option>
+            <option value="">{config?.backend === "nebius" ? "Automatic (picks per request)" : `Default (${persona.models[persona.default_model] || persona.default_model})`}</option>
             {Object.entries(persona.models).map(([id, label]) => (
               <option key={id} value={id}>{label}</option>
             ))}
           </select>
         </label>
-        <p className="fine">Takes effect from the next reply. Opus thinks deepest but uses more of your plan; Haiku is quickest.</p>
+        <p className="fine">{config?.backend === "nebius"
+          ? "Automatic sends quick commands to Lightning, planning to Ultra and the rest to Super. Pick one to pin it."
+          : "Takes effect from the next reply. Opus thinks deepest but uses more of your plan; Haiku is quickest."}</p>
       </fieldset>
 
       <fieldset className="setting">

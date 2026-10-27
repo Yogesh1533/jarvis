@@ -34,10 +34,16 @@ MODELS = {
     "claude-haiku-5-5": "Haiku 5.5 · fastest",
     "claude-fable-5-1": "Fable 5.1",
 }
+def _label(model_id):
+    """'nvidia/nemotron-3-super-120b-a12b' -> 'Nemotron 3 Super 120B'."""
+    words = model_id.split("/")[-1].replace("_", ".").replace("-", " ").split()
+    keep = [w for w in words if not (w.lower().startswith("a") and w[1:-1].isdigit())]  # drop "a12b"
+    return " ".join(w.upper() if w[:-1].isdigit() else w[:1].upper() + w[1:] for w in keep)
+
+
 if config.LLM_BACKEND == "nebius":
-    # "nvidia/nemotron-3-super-120b-a12b" -> "nemotron 3 super 120b a12b"
     MODELS = {
-        m: m.split("/")[-1].replace("_", ".").replace("-", " ")
+        m: _label(m)
         for m in dict.fromkeys(filter(None, (
             config.LLM_MODEL, config.NEBIUS_FAST_MODEL, config.NEBIUS_DEEP_MODEL,
         )))
