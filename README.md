@@ -356,14 +356,17 @@ that tries to set the confirmation flag itself.
 ## 9b. Tool-calling eval (Nebius)
 
 ```bash
-python tests/tool_eval.py            # auto routing vs Lightning, Super, Ultra
+python tests/tool_eval.py --limit 10   # quick check, ~100k tokens
+python tests/tool_eval.py              # all 27 requests on auto routing, ~270k tokens
+python tests/tool_eval.py --configs auto lightning super ultra   # full comparison, ~1M
 ```
 
 27 everyday voice requests, each in a fresh conversation with the real
 system prompt and every tool offered. Tools are stubbed, so nothing is
 actually sent or changed. It scores whether the model picks the right tool
-and how fast it answers, and writes `tests/tool_eval_results.md`. It uses
-real tokens (about a million for all four configs).
+and how fast it decides (one request per case), and writes
+`tests/tool_eval_results.md`. It uses real tokens and stops at `--budget`
+(default 300k).
 
 ## Troubleshooting
 

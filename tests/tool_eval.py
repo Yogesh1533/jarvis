@@ -6,10 +6,13 @@ Tools are stubbed: every call is recorded and answered with a canned
 result, so nothing is sent, played, deleted or changed. Each case starts a
 fresh conversation with the real system prompt and all of Jarvis's tools.
 Scores the first tool the model calls (or that it calls none, for small
-talk). Costs real tokens: roughly 27 cases x configs x ~9k tokens.
+talk), with one request per case, so "seconds" is time to that decision.
+Costs real tokens, about 10k per request: the default (auto only, 27
+cases) is ~270k tokens, and it stops early at --budget.
 
-Run:  python tests/tool_eval.py                      # auto, lightning, super, ultra
-      python tests/tool_eval.py --configs auto super --repeat 2
+Run:  python tests/tool_eval.py                          # auto routing only
+      python tests/tool_eval.py --limit 10               # cheaper smoke run
+      python tests/tool_eval.py --configs auto lightning super ultra   # full, ~1M tokens
 Writes tests/tool_eval_results.md (and .json) for the README.
 """
 import argparse
@@ -96,10 +99,14 @@ def run_case(text, model_for):
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument("--configs", nargs="+", default=list(CONFIGS), choices=list(CONFIGS))
+    parser.add_argument("--configs", nargs="+", default=["auto"], choices=list(CONFIGS))
     parser.add_argument("--repeat", type=int, default=1)
+    parser.add_argument("--limit", type=int, default=len(CASES), help="only the first N cases")
+    parser.add_argument("--budget", type=int, default=300_000, help="stop after this many tokens")
     args = parser.parse_args()
-    nebius_backend._MAX_TOOL_ROUNDS = 4   # first decisions are what we score
+    nebius_backend._MAX_TOOL_ROUNDS = 1   # one request per case: the first decision is what we score
+    cases = CASES[:args.limit]
+    spent = 0
 
     route_hits = sum(
         router.pick(t, "main", "fast", "deep")[1] == r for t, _, r in CASES
@@ -110,8 +117,12 @@ def main():
     for name in args.configs:
         rows = []
         for _ in range(args.repeat):
-            for text, expected, _route in CASES:
+            for text, expected, _route in cases:
+                if spent >= args.budget:
+                    print("token budget of {:,} reached; stopping".format(args.budget))
+                    break
                 row = run_case(text, CONFIGS[name])
+                spent += row["tokens"]
                 row.update(text=text, ok=row["first_tool"] in expected and not row["failed"])
                 rows.append(row)
                 print("{:<10} {:<4} {:>5.1f}s  {:<22} {}".format(
@@ -123,10 +134,12 @@ def main():
     out = Path(__file__).with_name("tool_eval_results")
     out.with_suffix(".json").write_text(json.dumps(results, indent=1))
     lines = [
-        "| Config | Right tool | Median reply | p90 reply | Tokens / request |",
+        "| Config | Right tool | Median time to decide | p90 | Tokens / request |",
         "|---|---|---|---|---|",
     ]
     for name, rows in results.items():
+        if not rows:
+            continue
         secs = sorted(r["seconds"] for r in rows)
         p90 = secs[min(len(secs) - 1, int(len(secs) * 0.9))]
         lines.append("| {} | {}/{} ({:.0f}%) | {:.1f} s | {:.1f} s | {:,.0f} |".format(
@@ -137,9 +150,10 @@ def main():
     out.with_suffix(".md").write_text(
         "# Tool-calling eval ({} requests{})\n\n{}\n\nRouter agrees with the expected "
         "route on {}/{} requests.\n".format(
-            len(CASES), " x {}".format(args.repeat) if args.repeat > 1 else "",
+            len(cases), " x {}".format(args.repeat) if args.repeat > 1 else "",
             table, route_hits, len(CASES)))
     print(table)
+    print("\nTokens used: {:,}".format(spent))
     misses = [(n, r["text"], r["first_tool"]) for n, rows in results.items() for r in rows if not r["ok"]]
     if misses:
         print("\nMisses:")
