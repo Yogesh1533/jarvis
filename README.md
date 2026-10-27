@@ -307,10 +307,10 @@ Things to try:
 <plist version="1.0"><dict>
   <key>Label</key><string>com.yogesh.jarvis</string>
   <key>ProgramArguments</key><array>
-    <string>/Users/yogesh/Documents/jarvis/.venv/bin/python</string>
+    <string>/Users/yogesh/Developer/apps/jarvis/.venv/bin/python</string>
     <string>-m</string><string>jarvis</string><string>voice</string>
   </array>
-  <key>WorkingDirectory</key><string>/Users/yogesh/Documents/jarvis</string>
+  <key>WorkingDirectory</key><string>/Users/yogesh/Developer/apps/jarvis</string>
   <key>RunAtLoad</key><true/>
   <key>KeepAlive</key><true/>
   <key>StandardOutPath</key><string>/tmp/jarvis.log</string>
