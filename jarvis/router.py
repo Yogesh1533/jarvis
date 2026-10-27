@@ -16,7 +16,7 @@ _DEEP = re.compile(
 _QUICK = re.compile(
     r"^\W*(hey jarvis\W*)?(please\W+)?("
     r"set|start|cancel|stop|pause|play|resume|skip|next|previous|mute|unmute|"
-    r"volume|turn (up|down|on|off)|open|close|quit|timer|remind|add|mark|"
+    r"volume|turn|open|close|quit|timer|remind|add|mark|"
     r"switch|use|what time|what's the time|what's playing|thanks|thank you|"
     r"ok|okay|yes|no|good (morning|night))\b",
     re.I,

@@ -340,6 +340,48 @@ check("routing: no retry once a tool ran (no duplicate side effects)",
       len(fake_oai.calls) == 2 and "couldn't reach" in reply and len(nb.messages) == 1)
 config.NEBIUS_FAST_MODEL = config.NEBIUS_DEEP_MODEL = ""
 
+print("== meeting prep ==")
+from datetime import datetime as _dt, timedelta as _td  # noqa: E402
+
+from jarvis.tools import gcal, prep, websearch  # noqa: E402
+
+_today = _dt.now().astimezone().replace(second=0, microsecond=0)
+_at = lambda h, m=0: (_today + _td(days=1)).replace(hour=h, minute=m).isoformat()  # noqa: E731
+_events = [
+    {"summary": "Standup", "start": {"dateTime": _at(9)}, "end": {"dateTime": _at(9, 15)}},
+    {"summary": "Digipearl roadmap", "start": {"dateTime": _at(14)}, "end": {"dateTime": _at(15)},
+     "location": "Zoom", "description": "Q4 priorities and the AI pilot",
+     "attendees": [{"email": "me@gmail.com", "self": True},
+                   {"email": "sara@digipearl.com.au", "displayName": "Sara Lee"},
+                   {"email": "room@resource.calendar.google.com", "resource": True}]},
+]
+_list_calls = []
+
+
+class _Events:
+    def list(self, **kw):
+        _list_calls.append(kw)
+        return SimpleNamespace(execute=lambda: {"items": _events + [{"summary": "All day", "start": {"date": "x"}}]})
+
+
+gcal._service = lambda: SimpleNamespace(events=lambda: _Events())
+_searches = []
+gmail.search = lambda q, n=10: _searches.append(q) or "from: Sara Lee\nsubject: AI pilot budget\nsnippet: can we cap it at 20k?"
+websearch.search = lambda q, n=5: "Digipearl: Sydney digital agency"
+check("prep: '2pm' finds the 14:00 meeting", prep.find_event("my 2pm", 48)["summary"] == "Digipearl roadmap")
+check("prep: title words find it", prep.find_event("the digipearl one", 48)["summary"] == "Digipearl roadmap")
+check("prep: no hint takes the next one", prep.find_event(None, 48)["summary"] == "Standup")
+check("prep: a bare number is not a time", prep._wanted_time("3 people") is None)
+out = tools.execute("meeting_prep", {"meeting": "2pm", "hours_ahead": 48}, lambda p: False)[0]
+check("prep: dossier names meeting and attendee", "Digipearl roadmap" in out and "Sara Lee" in out)
+check("prep: self and room resources skipped", "me@gmail.com" not in out and "resource" not in out)
+check("prep: email searched per attendee", any("sara@digipearl.com.au" in q for q in _searches))
+check("prep: company looked up from a work domain", "About digipearl.com.au" in out)
+check("prep: email thread included", "AI pilot budget" in out)
+check("prep: agenda included", "Q4 priorities" in out)
+check("prep: tells the model to show a card", "hud_show_card" in out)
+check("prep: routed to the deep model", router.pick("prep me for my 2pm", "m", "f", "d")[1] == "deep")
+
 print("== affirmative parsing ==")
 check("'Yes.' is affirmative", is_affirmative("Yes."))
 check("'yeah go ahead' is affirmative", is_affirmative("yeah go ahead"))

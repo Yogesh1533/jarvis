@@ -369,6 +369,24 @@ TOOL_SCHEMAS = [
     },
     # ── Briefing & system ──────────────────────────────────────────
     {
+        "name": "meeting_prep",
+        "description": (
+            "Prepare the user for a meeting in one call: finds it (by time like '2pm', by "
+            "title, or the next one), who's attending, recent email with them, what you "
+            "remember about them, and a web look at their organisation. Use for 'prep me "
+            "for my 2pm', 'brief me on my next meeting', 'what do I need to know for the "
+            "Digipearl meeting'. Afterwards show a hud_show_card (who, context, open "
+            "threads, talking points) and speak a 2-3 sentence summary."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "meeting": {"type": "string", "description": "A time ('2pm'), part of the title, or empty for the next meeting"},
+                "hours_ahead": {"type": "integer", "description": "How far ahead to look. Default 24"},
+            },
+        },
+    },
+    {
         "name": "briefing_get",
         "description": (
             "Gather a daily briefing in one call: weather, today's calendar, "
@@ -764,7 +782,7 @@ def _handlers():
     # missing; a broken dependency surfaces as a tool error, not a crash.
     from . import (
         apple, briefing, files, gcal, gmail, hud, mac, media, memory, persona,
-        recall, reminders, screen, system, tasks, timers, weather, websearch,
+        prep, recall, reminders, screen, system, tasks, timers, weather, websearch,
     )
 
     return {
@@ -795,6 +813,7 @@ def _handlers():
         "timer_list": timers.list_timers,
         "timer_cancel": timers.cancel,
         "briefing_get": briefing.get,
+        "meeting_prep": prep.prepare,
         "system_status": system.status,
         "mac_open_app": mac.open_app,
         "mac_quit_app": mac.quit_app,

@@ -353,6 +353,18 @@ moods and voice-controlled settings, HUD cards, web search, and proves the
 confirmation gate blocks unconfirmed sends — including a simulated model
 that tries to set the confirmation flag itself.
 
+## 9b. Tool-calling eval (Nebius)
+
+```bash
+python tests/tool_eval.py            # auto routing vs Lightning, Super, Ultra
+```
+
+27 everyday voice requests, each in a fresh conversation with the real
+system prompt and every tool offered. Tools are stubbed, so nothing is
+actually sent or changed. It scores whether the model picks the right tool
+and how fast it answers, and writes `tests/tool_eval_results.md`. It uses
+real tokens (about a million for all four configs).
+
 ## Troubleshooting
 
 | Symptom | Fix |
