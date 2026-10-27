@@ -10,6 +10,7 @@ an underscore is stripped from model-supplied input before dispatch, and
 the confirmation flag is only ever set by this dispatcher within the same
 conversation turn.
 """
+from .. import config
 
 
 class ConfirmationRequired(Exception):
@@ -36,6 +37,13 @@ def _result(value):
 DECLINED_MESSAGE = (
     "The user declined the confirmation. The action was NOT performed. "
     "Do not retry it; ask the user what they would like instead."
+)
+
+_MODEL_CHOICES = (
+    "lightning (fastest), super (balanced), ultra (deepest), or default "
+    "(pick automatically per request)"
+    if config.LLM_BACKEND == "nebius"
+    else "sonnet (balanced), opus (deepest), haiku (fastest), fable, or default"
 )
 
 TOOL_SCHEMAS = [
@@ -642,13 +650,12 @@ TOOL_SCHEMAS = [
     {
         "name": "assistant_set_model",
         "description": (
-            "Switch the model Jarvis thinks with. On Claude: sonnet (balanced), opus "
-            "(deepest), haiku (fastest), fable. On Nebius: a Nemotron size such as super "
-            "or nano. Or default. Applies from the next reply."
+            "Switch the model Jarvis thinks with: " + _MODEL_CHOICES + ". "
+            "Pass one word. Applies from the next reply."
         ),
         "input_schema": {
             "type": "object",
-            "properties": {"model": {"type": "string", "description": "a model family (e.g. sonnet, opus, super, nano) or default"}},
+            "properties": {"model": {"type": "string", "description": "one word: " + _MODEL_CHOICES}},
             "required": ["model"],
         },
     },
