@@ -187,7 +187,7 @@ The enforcement lives in `jarvis/tools/__init__.py`:
 If the user declines, the tool returns a "user declined, do not retry"
 result to the model, which reports back and moves on.
 
-## Two LLM backends
+## Three LLM backends
 
 `LLM_BACKEND` in `.env` selects how the brain reaches Claude. Both use
 `LLM_MODEL`, default `claude-sonnet-5-5`.
@@ -202,6 +202,15 @@ result to the model, which reports back and moves on.
   on a daemon thread behind the same synchronous `chat()` interface.
 - **`api`** — the original path in `assistant.py`: the Anthropic SDK,
   pay-per-token with an API key, with the notes below.
+- **`nebius`** — `jarvis/nebius_backend.py`: NVIDIA Nemotron on Nebius
+  Token Factory through its OpenAI-compatible API. A manual tool loop:
+  Jarvis's schemas become OpenAI function tools, each call goes through
+  `tools.execute` (same gate), and `<think>` blocks are stripped before
+  anything is spoken. The chat models are text-only, so a `ToolImage`
+  (a screenshot) is put into words by `NEBIUS_VISION_MODEL` first. A
+  failed request rolls the turn out of history so the session stays
+  valid. `NEBIUS_SYSTEM_PREFIX` (default `/no_think`) keeps Nemotron's
+  reasoning off for snappy voice replies.
 
 ## Anthropic API usage notes (`LLM_BACKEND=api`)
 

@@ -1,4 +1,6 @@
 """Jarvis's own voice and behaviour, changeable by asking."""
+import re
+
 from .. import config, moods, settings
 
 _LABELS = {
@@ -30,17 +32,27 @@ def set_voice(voice):
     )
 
 
+def _words(model_id):
+    return re.split(r"[-/_ .]+", model_id.lower().replace("claude-", ""))
+
+
+def _spoken(model_id):
+    if model_id.startswith("claude-"):
+        return _words(model_id)[0]
+    return settings.MODELS[model_id]
+
+
 def set_model(model):
-    """Switch Claude model by name or family ("opus", "haiku", "default")."""
+    """Switch model by name or family ("opus", "haiku", "super", "nano", "default")."""
     key = (model or "").strip().lower()
     if key in ("", "default", "normal", "standard", "original"):
         settings.update(model="")
         return "Back to the default model, {}. It applies from my next reply.".format(
             settings.MODELS.get(config.LLM_MODEL, config.LLM_MODEL))
-    matches = [m for m in settings.MODELS if key == m or key in m.replace("claude-", "").split("-")]
+    matches = [m for m in settings.MODELS if key == m.lower() or key in _words(m)]
     if len(matches) != 1:
         raise ValueError("Say one of: {}, or default.".format(", ".join(
-            m.replace("claude-", "").split("-")[0] for m in settings.MODELS)))
+            _spoken(m) for m in settings.MODELS)))
     settings.update(model=matches[0])
     return "Switched to {}. It applies from my next reply.".format(settings.MODELS[matches[0]])
 

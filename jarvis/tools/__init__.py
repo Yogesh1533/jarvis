@@ -642,12 +642,13 @@ TOOL_SCHEMAS = [
     {
         "name": "assistant_set_model",
         "description": (
-            "Switch the Claude model Jarvis thinks with: sonnet (balanced), opus (deepest), "
-            "haiku (fastest), fable, or default. Applies from the next reply."
+            "Switch the model Jarvis thinks with. On Claude: sonnet (balanced), opus "
+            "(deepest), haiku (fastest), fable. On Nebius: a Nemotron size such as super "
+            "or nano. Or default. Applies from the next reply."
         ),
         "input_schema": {
             "type": "object",
-            "properties": {"model": {"type": "string", "description": "sonnet, opus, haiku, fable or default"}},
+            "properties": {"model": {"type": "string", "description": "a model family (e.g. sonnet, opus, super, nano) or default"}},
             "required": ["model"],
         },
     },

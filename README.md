@@ -17,8 +17,9 @@ web search, and a persistent memory it maintains about you.
   [config/jarvis-voice-assistant-system-prompt.md](config/jarvis-voice-assistant-system-prompt.md).
   Edit it freely; no code changes needed.
 
-Brain: Claude Sonnet 5.5 by default, through your Claude plan (set
-`LLM_MODEL` and `LLM_BACKEND` in `.env`). TTS is pluggable: Piper (local,
+Brain: Claude Sonnet 5.5 by default, through your Claude plan, or NVIDIA
+Nemotron open models on Nebius Token Factory (set `LLM_BACKEND` and
+`LLM_MODEL` in `.env`). TTS is pluggable: Piper (local,
 free, default, with a voice per mood), ElevenLabs, or OpenAI.
 
 ---
@@ -62,6 +63,27 @@ curl -fsSL https://claude.ai/install.sh | bash   # installs ~/.local/bin/claude
 <https://platform.claude.com> (Settings → API keys), put it in `.env` as
 `ANTHROPIC_API_KEY=sk-ant-...`, and add API credits under Settings →
 Billing (billed separately from a Claude subscription).
+
+**Option C — NVIDIA Nemotron on Nebius Token Factory (open models).**
+Create a key in the [Token Factory](https://tokenfactory.nebius.com)
+console and set, in `.env`:
+
+```bash
+LLM_BACKEND=nebius
+NEBIUS_API_KEY=...
+```
+
+Then see which NVIDIA models your key can use, and check they do tool
+calling, and put the one you want in `NEBIUS_MODEL`:
+
+```bash
+python -m jarvis nebius-models --probe
+```
+
+The wake word, speech-to-text and memory recall still run on your Mac.
+Only the conversation text and tool results (including email and calendar
+content Jarvis reads for you) go to Nebius. The confirmation gate works
+exactly the same on every backend.
 
 ## 4. First run — text mode (no audio needed)
 

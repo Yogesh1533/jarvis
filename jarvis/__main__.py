@@ -11,6 +11,8 @@ def main():
     web_parser = sub.add_parser("web", help="browser chat UI on localhost")
     web_parser.add_argument("--port", type=int, default=8765)
     sub.add_parser("setup-google", help="one-time Google OAuth for Gmail + Calendar")
+    models_parser = sub.add_parser("nebius-models", help="list Nebius Token Factory models")
+    models_parser.add_argument("--probe", action="store_true", help="test tool calling on NVIDIA models")
     args = parser.parse_args()
 
     mode = args.mode or "voice"
@@ -26,6 +28,10 @@ def main():
         from . import google_auth
 
         google_auth.run_setup()
+    elif mode == "nebius-models":
+        from . import nebius_backend
+
+        nebius_backend.list_models(probe=args.probe)
     else:
         from . import voice
 

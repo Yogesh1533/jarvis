@@ -63,6 +63,13 @@ class Assistant:
             self.backend = AgentBackend(
                 confirm=confirm, system_prompt=build_system_prompt()
             )
+        elif client is None and config.LLM_BACKEND == "nebius":
+            # NVIDIA Nemotron on Nebius Token Factory (OpenAI-compatible API).
+            from .nebius_backend import NebiusBackend
+
+            self.backend = NebiusBackend(
+                confirm=confirm, system_prompt=build_system_prompt()
+            )
         elif client is None:
             import anthropic
 

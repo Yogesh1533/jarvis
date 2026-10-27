@@ -474,7 +474,7 @@ export function SettingsDrawer() {
       <fieldset className="setting">
         <legend>Model</legend>
         <label className="select-row">
-          <span>Claude model</span>
+          <span>Model</span>
           <select value={server.model} onChange={(e) => setServer({ model: e.target.value })}>
             <option value="">Default ({persona.models[persona.default_model] || persona.default_model})</option>
             {Object.entries(persona.models).map(([id, label]) => (
@@ -577,7 +577,7 @@ export function SettingsDrawer() {
 
       {config && (
         <dl className="server-facts">
-          <div><dt>Brain</dt><dd>{config.model} via {config.backend === "agent-sdk" ? "your Claude subscription" : "the Anthropic API"}</dd></div>
+          <div><dt>Brain</dt><dd>{config.model} via {{ "agent-sdk": "your Claude subscription", nebius: "Nebius Token Factory" }[config.backend] ?? "the Anthropic API"}</dd></div>
           <div><dt>Voice engine</dt><dd>{config.tts}</dd></div>
           <div><dt>Speech to text</dt><dd>{{ mlx: "Whisper large-v3-turbo, on this Mac's GPU", local: "Whisper, on this Mac" }[config.stt] ?? config.stt}</dd></div>
           <div><dt>Wake word</dt><dd>{voice.wake ? `“${voice.wake_word}”, on this Mac` : voice.ready ? "Unavailable" : "Loading"}</dd></div>

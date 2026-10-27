@@ -24,8 +24,22 @@ def _float(key: str, default: float) -> float:
 # LLM access
 # "agent-sdk" — your Claude subscription via the Claude Code CLI login
 # "api"       — Anthropic API key + credits (ANTHROPIC_API_KEY)
+# "nebius"    — NVIDIA open models on Nebius Token Factory (NEBIUS_API_KEY)
 LLM_BACKEND = os.getenv("LLM_BACKEND", "agent-sdk")
 LLM_MODEL = os.getenv("LLM_MODEL", "claude-sonnet-5-5")
+
+# Nebius Token Factory (OpenAI-compatible). Model ids: python -m jarvis nebius-models
+NEBIUS_API_KEY = os.getenv("NEBIUS_API_KEY", "")
+NEBIUS_BASE_URL = os.getenv("NEBIUS_BASE_URL", "https://api.tokenfactory.nebius.com/v1/")
+NEBIUS_MODEL = os.getenv("NEBIUS_MODEL", "nvidia/Llama-3_3-Nemotron-Super-49B-v1_5")
+NEBIUS_FAST_MODEL = os.getenv("NEBIUS_FAST_MODEL", "")      # small model for quick turns
+NEBIUS_VISION_MODEL = os.getenv("NEBIUS_VISION_MODEL", "")  # describes screenshots; "" = off
+# Prepended to the system prompt. Nemotron reasoning models read "/no_think"
+# (snappy voice replies) or "/think"; Llama-Nemotron uses "detailed thinking off".
+NEBIUS_SYSTEM_PREFIX = os.getenv("NEBIUS_SYSTEM_PREFIX", "/no_think")
+NEBIUS_TEMPERATURE = _float("NEBIUS_TEMPERATURE", 0.3)
+if LLM_BACKEND == "nebius" and LLM_MODEL.startswith("claude-"):
+    LLM_MODEL = NEBIUS_MODEL
 LLM_EFFORT = os.getenv("LLM_EFFORT", "low")
 LLM_MAX_TOKENS = int(_float("LLM_MAX_TOKENS", 4096))
 

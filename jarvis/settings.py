@@ -34,6 +34,12 @@ MODELS = {
     "claude-haiku-5-5": "Haiku 5.5 · fastest",
     "claude-fable-5-1": "Fable 5.1",
 }
+if config.LLM_BACKEND == "nebius":
+    # "nvidia/Llama-3_3-Nemotron-Super-49B-v1_5" -> "Llama 3.3 Nemotron Super 49B v1.5"
+    MODELS = {
+        m: m.split("/")[-1].replace("_", ".").replace("-", " ")
+        for m in dict.fromkeys(filter(None, (config.LLM_MODEL, config.NEBIUS_FAST_MODEL)))
+    }
 
 CHOICES = {
     "theme": ("arc", "mark", "vibranium"),

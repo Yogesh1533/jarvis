@@ -2,6 +2,7 @@
 fastapi>=0.110
 uvicorn>=0.29
 anthropic>=0.49
+openai>=1.40         # Nebius Token Factory (OpenAI-compatible)
 python-dotenv>=1.0
 ddgs>=9.0
 google-api-python-client>=2.100

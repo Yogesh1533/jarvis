@@ -209,6 +209,73 @@ check("request carries fallback config", req["fallbacks"] == "default"
 check("system prompt loaded from config file", "Jarvis" in req["system"][0]["text"])
 check("no thinking param sent (adaptive by default)", "thinking" not in req)
 
+print("== nebius backend (scripted fake OpenAI client) ==")
+from jarvis import nebius_backend  # noqa: E402
+from jarvis.nebius_backend import NebiusBackend  # noqa: E402
+
+
+def oai_call(name, arguments, id="call_1"):
+    return SimpleNamespace(id=id, function=SimpleNamespace(name=name, arguments=arguments))
+
+
+def oai_response(content=None, calls=None):
+    message = SimpleNamespace(content=content, tool_calls=calls)
+    return SimpleNamespace(
+        choices=[SimpleNamespace(message=message)],
+        usage=SimpleNamespace(prompt_tokens=100, completion_tokens=20),
+    )
+
+
+class FakeOpenAI:
+    def __init__(self, script):
+        self.calls = []
+        self.script = list(script)
+        self.chat = SimpleNamespace(completions=SimpleNamespace(create=self._create))
+
+    def _create(self, **kwargs):
+        self.calls.append({**kwargs, "messages": list(kwargs["messages"])})
+        item = self.script.pop(0)
+        if isinstance(item, Exception):
+            raise item
+        return item
+
+
+sent.clear()
+fake_oai = FakeOpenAI([
+    oai_response("Sending.", [oai_call("gmail_send_draft", '{"draft_id": "d1", "_confirmed": true}')]),
+    oai_response("<think>user said no</think>Okay, I won't send it."),
+])
+nb = NebiusBackend(confirm=lambda p: False, system_prompt="You are Jarvis.", client=fake_oai)
+reply = nb.chat("send my draft to alice")
+check("nebius: self-confirm smuggling still blocked", sent == [])
+check("nebius: reasoning stripped from the spoken reply", reply == "Okay, I won't send it.")
+tool_msgs = [m for m in fake_oai.calls[1]["messages"] if m["role"] == "tool"]
+check("nebius: declined result fed back as a tool message",
+      tool_msgs and tool_msgs[0]["tool_call_id"] == "call_1"
+      and tools.DECLINED_MESSAGE in tool_msgs[0]["content"])
+req = fake_oai.calls[0]
+check("nebius: system prefix + prompt sent", req["messages"][0]["role"] == "system"
+      and req["messages"][0]["content"].startswith(config.NEBIUS_SYSTEM_PREFIX))
+check("nebius: every Jarvis tool offered", len(req["tools"]) == len(tools.TOOL_SCHEMAS)
+      and req["tools"][0]["type"] == "function")
+check("nebius: stats recorded for the HUD", nebius_backend.stats.get("prompt_tokens") == 100)
+
+fake_oai = FakeOpenAI([
+    oai_response(None, [oai_call("tasks_list", "{not json")]),
+    oai_response("Your list is empty."),
+])
+nb = NebiusBackend(confirm=lambda p: False, system_prompt="x", client=fake_oai)
+nb.chat("what's on my list")
+bad = [m for m in fake_oai.calls[1]["messages"] if m["role"] == "tool"][0]["content"]
+check("nebius: malformed tool JSON reported to the model", "not valid JSON" in bad)
+
+fake_oai = FakeOpenAI([RuntimeError("503 upstream")])
+nb = NebiusBackend(confirm=lambda p: False, system_prompt="x", client=fake_oai)
+before = list(nb.messages)
+reply = nb.chat("hello")
+check("nebius: API error gives a spoken apology", "couldn't reach" in reply)
+check("nebius: failed turn rolled back from history", nb.messages == before)
+
 print("== affirmative parsing ==")
 check("'Yes.' is affirmative", is_affirmative("Yes."))
 check("'yeah go ahead' is affirmative", is_affirmative("yeah go ahead"))
