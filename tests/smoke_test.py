@@ -4,6 +4,7 @@ the model tries to smuggle the confirmation flag in.
 
 Run:  python tests/smoke_test.py
 """
+import json
 import sys
 import tempfile
 import time
@@ -258,7 +259,8 @@ check("nebius: system prefix + prompt sent", req["messages"][0]["role"] == "syst
       and req["messages"][0]["content"].startswith(config.NEBIUS_SYSTEM_PREFIX))
 check("nebius: every Jarvis tool offered", len(req["tools"]) == len(tools.TOOL_SCHEMAS)
       and req["tools"][0]["type"] == "function")
-check("nebius: stats recorded for the HUD", nebius_backend.stats.get("prompt_tokens") == 100)
+check("nebius: turn stats summed for the HUD", nebius_backend.stats.get("prompt_tokens") == 200
+      and nebius_backend.stats["requests"] == 2 and nebius_backend.stats["tools"] == ["gmail_send_draft"])
 
 fake_oai = FakeOpenAI([
     oai_response(None, [oai_call("tasks_list", "{not json")]),
@@ -275,6 +277,68 @@ before = list(nb.messages)
 reply = nb.chat("hello")
 check("nebius: API error gives a spoken apology", "couldn't reach" in reply)
 check("nebius: failed turn rolled back from history", nb.messages == before)
+
+print("== router ==")
+from jarvis import router  # noqa: E402
+
+pick = lambda t: router.pick(t, "main", "fast", "deep")[1]  # noqa: E731
+check("router: timer is quick", pick("set a ten minute timer for the pasta") == "fast")
+check("router: skip song is quick", pick("Hey Jarvis, skip this song") == "fast")
+check("router: planning goes deep", pick("plan my week around the thesis deadline") == "deep")
+check("router: prep me goes deep", pick("prep me for my 2pm meeting") == "deep")
+check("router: ordinary question goes main", pick("what's the weather like in Sydney") == "main")
+check("router: long quick-looking request is main", pick("add " + "very " * 20 + "long thing") == "main")
+check("router: no fast model configured falls to main",
+      router.pick("pause the music", "main", "", "deep")[1] == "main")
+
+print("== privacy vault ==")
+from jarvis import privacy  # noqa: E402
+
+v = privacy.Vault()
+masked = v.mask("Mail bob@corp.com or call +61 412 345 678, card 4111 1111 1111 1111, due 2026-10-28 18:00")
+check("privacy: email masked", "bob@corp.com" not in masked and "[EMAIL_1]" in masked)
+check("privacy: phone masked", "412 345 678" not in masked and "[PHONE_1]" in masked)
+check("privacy: valid card masked", "4111" not in masked and "[CARD_1]" in masked)
+check("privacy: dates and times untouched", "2026-10-28 18:00" in masked)
+check("privacy: same value, same token", v.mask("again bob@corp.com") == "again [EMAIL_1]")
+check("privacy: unmask restores nested args",
+      v.unmask({"to": "[EMAIL_1]", "cc": ["PHONE_1"]}) == {"to": "bob@corp.com", "cc": ["+61 412 345 678"]})
+check("privacy: unknown token left alone", v.unmask("[EMAIL_9]") == "[EMAIL_9]")
+
+fake_oai = FakeOpenAI([
+    oai_response(None, [oai_call("task_add", '{"title": "call [PHONE_1] about the lease"}')]),
+    oai_response("Added: call [PHONE_1] about the lease."),
+])
+nb = NebiusBackend(confirm=lambda p: False, system_prompt="Mum is mum@home.net", client=fake_oai)
+reply = nb.chat("remind me to call 0412 345 678 about the lease")
+sent_text = json.dumps(fake_oai.calls, default=str)
+check("privacy e2e: number never sent to the model", "0412 345 678" not in sent_text)
+check("privacy e2e: memories in the system prompt masked", "mum@home.net" not in sent_text)
+check("privacy e2e: tool got the real number", "0412 345 678" in tasks.list_tasks())
+check("privacy e2e: reply unmasked for speech", "0412 345 678" in reply)
+check("privacy e2e: stats count masked values", nebius_backend.stats["masked"] >= 1)
+
+print("== nebius routing + fallback ==")
+config.NEBIUS_FAST_MODEL, config.NEBIUS_DEEP_MODEL = "fast-model", "deep-model"
+fake_oai = FakeOpenAI([RuntimeError("fast model down"), oai_response("Paused.")])
+nb = NebiusBackend(confirm=lambda p: False, system_prompt="x", client=fake_oai)
+reply = nb.chat("pause the music")
+check("routing: quick command tried the fast model first", fake_oai.calls[0]["model"] == "fast-model")
+check("routing: failed fast model falls back to main",
+      reply == "Paused." and fake_oai.calls[1]["model"] == config.LLM_MODEL)
+check("routing: fallback recorded for the HUD", nebius_backend.stats["reason"].startswith("fallback"))
+check("routing: history holds one clean turn",
+      [m["role"] for m in nb.messages] == ["system", "user", "assistant"])
+
+fake_oai = FakeOpenAI([
+    oai_response(None, [oai_call("task_add", '{"title": "x"}')]),
+    RuntimeError("deep model down mid-turn"),
+])
+nb = NebiusBackend(confirm=lambda p: False, system_prompt="x", client=fake_oai)
+reply = nb.chat("plan my week")
+check("routing: no retry once a tool ran (no duplicate side effects)",
+      len(fake_oai.calls) == 2 and "couldn't reach" in reply and len(nb.messages) == 1)
+config.NEBIUS_FAST_MODEL = config.NEBIUS_DEEP_MODEL = ""
 
 print("== affirmative parsing ==")
 check("'Yes.' is affirmative", is_affirmative("Yes."))

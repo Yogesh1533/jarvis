@@ -4,7 +4,7 @@ import { panelsForTool } from "./lib/api";
 import { audio } from "./lib/audio";
 import { desktop, isApp } from "./lib/desktop";
 import { link, type ServerMsg } from "./lib/link";
-import { useStore, type Mode } from "./lib/store";
+import { useStore, type Brain, type Mode } from "./lib/store";
 import { Reactor } from "./components/Reactor";
 import {
   Boot, Caption, CommandBar, ConfirmDialog, HistoryDrawer, SettingsDrawer,
@@ -12,7 +12,7 @@ import {
 } from "./components/Chrome";
 import { CommandPalette, HearingLine, HoloCards, OrbBar } from "./components/Extras";
 import {
-  AgendaPanel, MailPanel, MediaPanel, MemoryPanel, SystemPanel, TasksPanel, TimersPanel,
+  AgendaPanel, BrainPanel, MailPanel, MediaPanel, MemoryPanel, SystemPanel, TasksPanel, TimersPanel,
 } from "./components/Panels";
 
 // The server owns the state machine; until the boot sequence finishes we
@@ -100,6 +100,11 @@ function handle(msg: ServerMsg) {
         if (panels.length) s.bump(...panels);
       }
       break;
+    case "brain": {
+      const { type: _t, ...turn } = msg;
+      s.set({ brain: [...s.brain.slice(-11), turn as Brain] });
+      break;
+    }
     case "reply":
       s.setCaption("jarvis", msg.text);
       s.addLog("jarvis", msg.text, msg.error);
@@ -217,6 +222,7 @@ export default function App() {
           <ConfirmDialog />
         </div>
         <div className="col col-right">
+          <BrainPanel />
           <MediaPanel />
           <MailPanel />
           <SystemPanel />

@@ -47,6 +47,20 @@ export interface ServerConfig {
 }
 
 /** Settings that live on the server, so voice commands and every window agree. */
+/** How the last turn was handled (Nebius backend only). */
+export interface Brain {
+  model: string;
+  route: "fast" | "main" | "deep" | "pinned";
+  reason: string;
+  seconds: number;
+  model_seconds: number;
+  requests: number;
+  tools: string[];
+  prompt_tokens: number;
+  completion_tokens: number;
+  masked: number;
+}
+
 export interface ServerSettings {
   theme: ThemeId;
   mood: string;
@@ -144,6 +158,7 @@ interface State {
   media: NowPlaying | null | undefined; // undefined: no live updates yet
   log: LogEntry[];
   tools: ToolEvent[];
+  brain: Brain[]; // newest last
   confirm: string | null;
   toasts: Toast[];
   cards: HoloCard[];
@@ -178,6 +193,7 @@ export const useStore = create<State>((set, get) => ({
   media: undefined,
   log: [],
   tools: [],
+  brain: [],
   confirm: null,
   toasts: [],
   cards: [],

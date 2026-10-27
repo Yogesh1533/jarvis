@@ -421,6 +421,53 @@ export function SystemPanel() {
   );
 }
 
+// ── Brain (Nebius backend) ─────────────────────────────────────────
+const ROUTE_LABEL = { fast: "Fast", main: "Main", deep: "Deep", pinned: "Pinned" } as const;
+
+function shortModel(id: string) {
+  return id.split("/").pop()!.replace(/_/g, ".").replace(/-/g, " ");
+}
+
+export function BrainPanel() {
+  const backend = useStore((s) => s.config?.backend);
+  const turns = useStore((s) => s.brain);
+  if (backend !== "nebius") return null;
+  const last = turns[turns.length - 1];
+  const peak = Math.max(1, ...turns.map((t) => t.seconds));
+  return (
+    <Panel title="Brain" meta="NVIDIA Nemotron · Nebius">
+      {!last ? (
+        <Empty>Ask something to see which model answers.</Empty>
+      ) : (
+        <>
+          <p className="brain-route">
+            <span className={"route route-" + last.route}>{ROUTE_LABEL[last.route]}</span>
+            <span className="brain-model">{shortModel(last.model)}</span>
+          </p>
+          <p className="brain-reason">{last.reason}</p>
+          <div className="brain-bars" aria-label="Response time, last turns">
+            {turns.map((t, i) => (
+              <i
+                key={i}
+                className={"route-" + t.route}
+                style={{ height: `${Math.max(8, (t.seconds / peak) * 100)}%` }}
+                title={`${t.route}: ${t.seconds}s`}
+              />
+            ))}
+          </div>
+          <dl className="sys-facts">
+            <div><dt>Reply in</dt><dd>{last.seconds.toFixed(1)} s ({last.requests} call{last.requests === 1 ? "" : "s"})</dd></div>
+            <div><dt>Tokens</dt><dd>{last.prompt_tokens.toLocaleString()} in · {last.completion_tokens.toLocaleString()} out</dd></div>
+            {last.tools.length > 0 && <div><dt>Tools</dt><dd>{[...new Set(last.tools)].join(", ")}</dd></div>}
+            <div><dt>Masked</dt><dd>{last.masked ? `${last.masked} private value${last.masked === 1 ? "" : "s"}` : "nothing to mask"}</dd></div>
+          </dl>
+        </>
+      )}
+      <p className="brain-local">On this Mac only: wake word, speech to text, memory search</p>
+    </Panel>
+  );
+}
+
 // ── Memory ─────────────────────────────────────────────────────────
 interface Memory {
   name: string;

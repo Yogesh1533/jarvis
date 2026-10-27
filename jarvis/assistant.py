@@ -149,6 +149,15 @@ class Assistant:
 
         return "I seem to be going in circles — could you rephrase that?"
 
+    def brain(self):
+        """How the last turn was handled (route, model, timing, masking), or
+        None on backends that don't report it."""
+        if config.LLM_BACKEND == "nebius" and self.backend is not None:
+            from . import nebius_backend
+
+            return dict(nebius_backend.stats) or None
+        return None
+
     @staticmethod
     def _final_text(response):
         parts = [b.text for b in response.content if b.type == "text"]

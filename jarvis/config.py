@@ -39,6 +39,8 @@ NEBIUS_VISION_MODEL = os.getenv("NEBIUS_VISION_MODEL", "nvidia/Nemotron-3.5-Supe
 # (snappy voice replies) or "/think"; Llama-Nemotron uses "detailed thinking off".
 NEBIUS_SYSTEM_PREFIX = os.getenv("NEBIUS_SYSTEM_PREFIX", "/no_think")
 NEBIUS_TEMPERATURE = _float("NEBIUS_TEMPERATURE", 0.3)
+# Mask emails, phone and card numbers before anything is sent to Nebius.
+NEBIUS_PRIVACY = os.getenv("NEBIUS_PRIVACY", "on").strip().lower() not in ("off", "0", "false", "no")
 if LLM_BACKEND == "nebius" and LLM_MODEL.startswith("claude-"):
     LLM_MODEL = NEBIUS_MODEL
 LLM_EFFORT = os.getenv("LLM_EFFORT", "low")

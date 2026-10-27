@@ -342,6 +342,21 @@ li:hover .ghost-x, .ghost-x:focus-visible, .toast .ghost-x { opacity: 1; }
 .gauge figcaption { font-size: 12.5px; color: var(--ice-dim); margin-top: -6px; }
 .gauge figcaption span { color: var(--holo); }
 .sys-facts { margin: 10px 0 0; display: grid; gap: 3px; }
+
+/* Brain panel: which Nemotron answered, and why */
+.brain-route { display: flex; align-items: baseline; gap: 10px; margin: 0; }
+.brain-model { font-size: 15px; color: var(--ice); text-transform: capitalize; }
+.brain-reason { margin: 2px 0 8px; font-size: 12.5px; color: var(--ice-dim); }
+.route {
+  font-size: 11px; letter-spacing: 0.12em; text-transform: uppercase;
+  padding: 2px 8px; border: 1px solid currentColor; border-radius: 3px;
+}
+.route-fast { color: var(--holo); }
+.route-main { color: var(--ice); }
+.route-deep, .route-pinned { color: var(--accent); }
+.brain-bars { display: flex; align-items: flex-end; gap: 3px; height: 28px; }
+.brain-bars i { flex: 1; max-width: 14px; background: currentColor; opacity: 0.7; border-radius: 1px; }
+.brain-local { margin: 10px 0 0; font-size: 12px; color: var(--ice-faint); }
 .sys-facts div, .server-facts div { display: flex; justify-content: space-between; gap: 12px; font-size: 13.5px; }
 .sys-facts dt, .server-facts dt { color: var(--ice-dim); }
 .sys-facts dd, .server-facts dd { margin: 0; font-variant-numeric: tabular-nums; text-align: right; }

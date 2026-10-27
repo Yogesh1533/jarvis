@@ -211,6 +211,24 @@ result to the model, which reports back and moves on.
   failed request rolls the turn out of history so the session stays
   valid. `NEBIUS_SYSTEM_PREFIX` (default `/no_think`) keeps Nemotron's
   reasoning off for snappy voice replies.
+  - **Routing** (`router.py`): unless a model is pinned in settings, each
+    turn goes to `NEBIUS_FAST_MODEL` (short commands: timers, media,
+    "add…"), `NEBIUS_DEEP_MODEL` ("plan", "compare", "prep me", or 60+
+    words) or `LLM_MODEL`. Rules, not a classifier call: zero added
+    latency and an exact reason for the HUD. If a fast/deep model fails
+    before any tool has run, the turn is retried on the main model; once a
+    tool has run it isn't, so side effects never repeat.
+  - **Privacy** (`privacy.py`): emails, phone numbers and Luhn-valid card
+    numbers in the system prompt (memories), user text and tool results
+    are replaced with stable placeholders (`[EMAIL_1]`) before a request
+    is sent. Tool arguments are unmasked just before `tools.execute`, and
+    the reply before it's spoken. The map lives in memory for the session
+    only. The system prompt also tells the model that tool results are
+    data, never instructions (prompt-injection hygiene for email and web
+    content).
+  - **Telemetry**: each turn's route, model, timings, token counts and
+    masked-value count go to the HUD's Brain panel (`{"type": "brain"}`)
+    and to text mode.
 
 ## Anthropic API usage notes (`LLM_BACKEND=api`)
 

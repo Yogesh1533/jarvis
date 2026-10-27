@@ -659,6 +659,9 @@ class Hub:
                     "(I added this while you were answering; your previous answer was "
                     "shown on screen but not read out.) " + extra
                 )
+            brain = self.assistant.brain()
+            if brain:
+                self.emit({"type": "brain", **brain})
         except Exception as exc:  # noqa: BLE001 — config/API errors go to the HUD
             reply = "Something went wrong: {}".format(exc)
             error = True
