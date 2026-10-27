@@ -35,10 +35,12 @@ MODELS = {
     "claude-fable-5-1": "Fable 5.1",
 }
 if config.LLM_BACKEND == "nebius":
-    # "nvidia/Llama-3_3-Nemotron-Super-49B-v1_5" -> "Llama 3.3 Nemotron Super 49B v1.5"
+    # "nvidia/nemotron-3-super-120b-a12b" -> "nemotron 3 super 120b a12b"
     MODELS = {
         m: m.split("/")[-1].replace("_", ".").replace("-", " ")
-        for m in dict.fromkeys(filter(None, (config.LLM_MODEL, config.NEBIUS_FAST_MODEL)))
+        for m in dict.fromkeys(filter(None, (
+            config.LLM_MODEL, config.NEBIUS_FAST_MODEL, config.NEBIUS_DEEP_MODEL,
+        )))
     }
 
 CHOICES = {

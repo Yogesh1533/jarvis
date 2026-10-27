@@ -31,9 +31,10 @@ LLM_MODEL = os.getenv("LLM_MODEL", "claude-sonnet-5-5")
 # Nebius Token Factory (OpenAI-compatible). Model ids: python -m jarvis nebius-models
 NEBIUS_API_KEY = os.getenv("NEBIUS_API_KEY", "")
 NEBIUS_BASE_URL = os.getenv("NEBIUS_BASE_URL", "https://api.tokenfactory.nebius.com/v1/")
-NEBIUS_MODEL = os.getenv("NEBIUS_MODEL", "nvidia/Llama-3_3-Nemotron-Super-49B-v1_5")
-NEBIUS_FAST_MODEL = os.getenv("NEBIUS_FAST_MODEL", "")      # small model for quick turns
-NEBIUS_VISION_MODEL = os.getenv("NEBIUS_VISION_MODEL", "")  # describes screenshots; "" = off
+NEBIUS_MODEL = os.getenv("NEBIUS_MODEL", "nvidia/nemotron-3-super-120b-a12b")
+NEBIUS_FAST_MODEL = os.getenv("NEBIUS_FAST_MODEL", "nvidia/Nemotron-3_5-Lightning")   # quick turns
+NEBIUS_DEEP_MODEL = os.getenv("NEBIUS_DEEP_MODEL", "nvidia/Nemotron-3-Ultra-550b-a55b")  # hard ones
+NEBIUS_VISION_MODEL = os.getenv("NEBIUS_VISION_MODEL", "nvidia/Nemotron-3.5-Super-VL")  # screenshots; "" = off
 # Prepended to the system prompt. Nemotron reasoning models read "/no_think"
 # (snappy voice replies) or "/think"; Llama-Nemotron uses "detailed thinking off".
 NEBIUS_SYSTEM_PREFIX = os.getenv("NEBIUS_SYSTEM_PREFIX", "/no_think")
