@@ -189,6 +189,33 @@ result to the model, which reports back and moves on.
 
 ## Three LLM backends
 
+With `LLM_BACKEND=nebius`:
+
+```mermaid
+flowchart LR
+  subgraph mac["Your Mac"]
+    mic([Mic]) --> wake["Wake word<br/>openWakeWord"]
+    wake --> stt["Speech to text<br/>Whisper on the GPU"]
+    stt --> router{"Router"}
+    router --> vault["Privacy vault<br/>masks emails, phones, cards"]
+    vault -- "tool call, unmasked" --> gate["Confirmation gate<br/>spoken yes for risky actions"]
+    gate --> tools["Tools: Gmail, Calendar, tasks,<br/>reminders, Mac, files, web"]
+    tools -- "result, masked" --> vault
+    mem[("Memory + recall<br/>local embeddings")] --> tools
+    vault -- "reply, unmasked" --> tts["Piper voice"] --> spk([Speaker])
+    vault -.-> hud["HUD + Brain panel"]
+  end
+  subgraph nebius["Nebius Token Factory"]
+    L["Nemotron 3.5 Lightning<br/>quick commands"]
+    S["Nemotron 3 Super 120B<br/>everyday requests"]
+    U["Nemotron 3 Ultra 550B<br/>planning, meeting prep"]
+    V["Nemotron 3.5 Super VL<br/>screenshots"]
+  end
+  vault <--> L & S & U
+  tools <--> V
+```
+
+
 `LLM_BACKEND` in `.env` selects how the brain reaches Claude. Both use
 `LLM_MODEL`, default `claude-sonnet-5-5`.
 
