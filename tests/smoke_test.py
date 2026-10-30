@@ -13,6 +13,13 @@ from types import SimpleNamespace
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
+# Offline: the scripted fake models stand in for both the Anthropic client and
+# the Nebius one, so fix the backend whatever .env says.
+import os  # noqa: E402
+
+os.environ["LLM_BACKEND"] = "api"
+os.environ["LLM_MODEL"] = "claude-sonnet-5-5"
+
 from jarvis import config  # noqa: E402
 
 # Sandbox all state into a temp dir before importing the tools.
@@ -51,7 +58,7 @@ embeddings.set_embedder(fake_model)   # no test may load the real model
 
 from jarvis import tools  # noqa: E402
 from jarvis.tools import gmail, memory, reminders, tasks  # noqa: E402
-from jarvis.assistant import Assistant  # noqa: E402
+from jarvis.assistant import Assistant, build_system_prompt  # noqa: E402
 from jarvis.voice import is_affirmative  # noqa: E402
 
 PASS = []
@@ -278,6 +285,13 @@ reply = nb.chat("hello")
 check("nebius: API error gives a spoken apology", "couldn't reach" in reply)
 check("nebius: failed turn rolled back from history", nb.messages == before)
 
+check("nebius: markdown stripped for speech", nebius_backend.clean(
+    "You've got **two** skills:\n• **end-of-day** wraps up\n- `bank-call` [docs](https://x.y)\n## Done")
+    == "You've got two skills:\nend-of-day wraps up\nbank-call docs\nDone")
+check("nebius: emoji stripped, Devanagari kept", nebius_backend.clean("Hey there! 👋 Namaste 🙏🏽 साथी ✅ done")
+      == "Hey there! Namaste साथी done")
+check("nebius: maths and plain asterisks survive", nebius_backend.clean("3 * 4 is 12") == "3 * 4 is 12")
+
 print("== router ==")
 from jarvis import router  # noqa: E402
 
@@ -364,6 +378,7 @@ class _Events:
         return SimpleNamespace(execute=lambda: {"items": _events + [{"summary": "All day", "start": {"date": "x"}}]})
 
 
+_real = (gcal._service, gmail.search, websearch.search)
 gcal._service = lambda: SimpleNamespace(events=lambda: _Events())
 _searches = []
 gmail.search = lambda q, n=10: _searches.append(q) or "from: Sara Lee\nsubject: AI pilot budget\nsnippet: can we cap it at 20k?"
@@ -381,6 +396,125 @@ check("prep: email thread included", "AI pilot budget" in out)
 check("prep: agenda included", "Q4 priorities" in out)
 check("prep: tells the model to show a card", "hud_show_card" in out)
 check("prep: routed to the deep model", router.pick("prep me for my 2pm", "m", "f", "d")[1] == "deep")
+gcal._service, gmail.search, websearch.search = _real
+
+print("== tavily ==")
+import requests  # noqa: E402
+
+_posts = []
+
+
+def _fake_post(url, json=None, headers=None, timeout=None):
+    _posts.append((url, json, headers))
+    if url.endswith("/extract"):
+        body = {"results": [{"url": json["urls"][0], "raw_content": "Clean article text."}]}
+    else:
+        body = {"answer": "Digipearl is a Sydney agency.", "results": [
+            {"title": "Digipearl", "url": "https://digipearl.com.au", "content": "Digital agency",
+             "score": 0.91, "published_date": "2026-10-20T09:00:00Z"}]}
+    return SimpleNamespace(json=lambda: body, raise_for_status=lambda: None)
+
+
+_real_post, requests.post = requests.post, _fake_post
+config.TAVILY_API_KEY = "tvly-test"
+out = websearch.search("digipearl", 3)
+check("tavily: search returns answer and result", "Summary: Digipearl is a Sydney agency." in out and "digipearl.com.au" in out)
+check("tavily: key sent as bearer, not in the body",
+      _posts[-1][2]["Authorization"] == "Bearer tvly-test" and "api_key" not in _posts[-1][1])
+check("tavily: news asks for the news topic", "2026-10-20" in websearch.news("AI") and _posts[-1][1]["topic"] == "news")
+check("tavily: page reading uses extract", websearch.read_page("https://example.com/a") == "Clean article text.")
+
+
+def _boom(*a, **k):
+    raise RuntimeError("429 rate limited")
+
+
+requests.post = _boom
+_ddg_calls = []
+_real_ddg, websearch._ddg_search = websearch._ddg_search, lambda q, n=5: _ddg_calls.append(q) or "ddg result"
+check("tavily: failure falls back to DuckDuckGo", websearch.search("x") == "ddg result" and _ddg_calls == ["x"])
+config.TAVILY_API_KEY = ""
+check("tavily: no key goes straight to DuckDuckGo", websearch.search("y") == "ddg result")
+requests.post, websearch._ddg_search = _real_post, _real_ddg
+
+print("== skills ==")
+from jarvis.tools import skills  # noqa: E402
+
+config.SKILLS_DIR = _tmp / "skills"
+check("skills: starter skills listed", "morning-kickoff (starter)" in skills.list_skills())
+skills.begin_turn()
+tools.execute("task_add", {"title": "review PRs"}, lambda p: False)
+skills.begin_turn()   # the user's next turn: "save that as a skill"
+out = tools.execute("skill_save", {
+    "name": "PR Review!", "description": "Queue up code review",
+    "steps": "1. Add a task to review PRs\n2. Remind me at 4pm"}, lambda p: False)[0]
+check("skills: saved with a clean slug and the recorded call", "'pr-review' saved" in out and "1 recorded" in out)
+saved = (config.SKILLS_DIR / "pr-review.md").read_text()
+check("skills: file has steps and the real tool call", "Remind me at 4pm" in saved and "`task_add`" in saved)
+check("skills: skill tools themselves aren't recorded", "skill_save" not in saved)
+run_text = tools.execute("skill_run", {"name": "pr review"}, lambda p: False)[0]
+check("skills: run returns steps and the gate reminder", "Remind me at 4pm" in run_text and "confirmation" in run_text)
+check("skills: partial names resolve", "SKILL: end-of-day" in skills.run("end of"))
+check("skills: index goes into the system prompt", "pr-review: Queue up code review" in build_system_prompt())
+out, _ = tools.execute("skill_delete", {"name": "pr-review"}, lambda p: False)
+check("skills: delete is confirmation-gated", out == tools.DECLINED_MESSAGE and (config.SKILLS_DIR / "pr-review.md").exists())
+tools.execute("skill_delete", {"name": "pr-review"}, lambda p: True)
+check("skills: confirmed delete removes it", not (config.SKILLS_DIR / "pr-review.md").exists())
+check("skills: starter skills can't be deleted", "starter skill" in tools.execute("skill_delete", {"name": "end-of-day"}, lambda p: True)[0])
+
+rows = skills.data()
+check("skills: shelf data lists starters with descriptions",
+      {"morning-kickoff", "end-of-day"} <= {r["name"] for r in rows} and all(r["starter"] and r["description"] for r in rows))
+folder = config.SKILLS_DIR / "trip-plan"
+folder.mkdir(parents=True)
+(folder / "SKILL.md").write_text("---\nname: trip-plan\ndescription: Plan a short trip\n---\n\n## Steps\n\n1. Check the weather")
+rows = skills.data()
+check("skills: Agent Skills folders (name/SKILL.md) load, yours before starters",
+      rows[0]["name"] == "trip-plan" and not rows[0]["starter"] and "Check the weather" in rows[0]["body"])
+check("skills: folder skills run by name", "Check the weather" in skills.run("trip plan"))
+check("skills: folder skills can't be deleted by voice", "skill folder" in tools.execute("skill_delete", {"name": "trip-plan"}, lambda p: True)[0])
+
+print("== wake on the name ==")
+from jarvis import web  # noqa: E402
+from jarvis.audio import spotter  # noqa: E402
+
+check("spot: 'Hey Jarvis' alone", spotter.match("Hey Jarvis.") == (True, ""))
+check("spot: request in the same breath", spotter.match("Hey, Jarvis, what's the time?") == (True, "what's the time?"))
+check("spot: common mishearings", all(spotter.match(t)[0] for t in ("Jervis, pause the music", "okay jarvas", "Hi Javis")))
+check("spot: how the spoken name is usually transcribed", all(spotter.match(t)[0] for t in ("Hey Jarvis, set a timer", "hey Jarvis.", "Hey Charvis")))
+check("spot: the name later in a sentence doesn't wake", not spotter.match("I told my jarvis about it")[0])
+check("spot: other words don't wake", not any(spotter.match(t)[0] for t in ("Thank you.", "Satisfied?", "hey Siri")))
+
+ns = spotter.NameSpotter()
+silence, voice = np.zeros(1280, dtype=np.int16), np.ones(1280, dtype=np.int16)
+out = [ns.feed(silence, 0.0) for _ in range(5)] + [ns.feed(voice, 0.9) for _ in range(10)]
+out += [ns.feed(silence, 0.05) for _ in range(spotter.END_QUIET)]
+bursts = [b for b in out if b is not None]
+check("spot: one burst per stretch of speech", len(bursts) == 1)
+check("spot: burst keeps pre-roll and trailing quiet",
+      len(bursts[0]) == 1280 * (spotter.PREROLL + 10 - spotter.ONSET_NEEDED + spotter.END_QUIET))
+ns.reset()
+blips = [ns.feed(voice, 0.9) for _ in range(3)] + [ns.feed(silence, 0.0) for _ in range(spotter.END_QUIET + 1)]
+check("spot: a click too short to be speech is ignored", all(b is None for b in blips))
+
+events = []
+fake_hub = SimpleNamespace(
+    confirm=None, on_wake=lambda: events.append("wake"), emit=lambda m: events.append(m.get("type")),
+    set_state=lambda st: events.append(st), on_utterance=lambda t, p: events.append(("ask", t, p)),
+)
+vp = web.VoicePipeline(fake_hub)
+vp.spotter, vp.mode = spotter.NameSpotter(), "sleep"
+_real_stt = web.stt.transcribe
+web.stt.transcribe = lambda a: "Hey Jarvis, set a timer for ten minutes."
+check("spot: name plus request goes straight to the brain",
+      vp._spot(voice) and ("ask", "set a timer for ten minutes.", "chat") in events and vp.mode == "off")
+events.clear(); vp.mode = "sleep"
+web.stt.transcribe = lambda a: "Hey Jarvis."
+check("spot: name alone starts listening", vp._spot(voice) and events == ["wake"])
+events.clear(); vp.mode = "sleep"
+web.stt.transcribe = lambda a: "and then we went to the shops"
+check("spot: other speech is ignored", vp._spot(voice) is False and events == [])
+web.stt.transcribe = _real_stt
 
 print("== affirmative parsing ==")
 check("'Yes.' is affirmative", is_affirmative("Yes."))
@@ -1026,6 +1160,16 @@ check("warm-up without the library does not raise", True)
 embeddings.available = real_available
 memory.delete("warm-fact", _confirmed=True)
 history.clear()
+
+print("== pronunciation ==")
+from jarvis.audio import tts as tts_mod
+
+check("name left alone by default", tts_mod.pronounce("Hi, I'm Jarvis.") == "Hi, I'm Jarvis.")
+
+vp_dbg = web.VoicePipeline(SimpleNamespace(state="idle", emit=lambda m: None))
+vp_dbg.feed(np.zeros(1280, dtype=np.int16).tobytes())
+dbg = vp_dbg.debug()
+check("voice debug counts audio frames even while the pipeline is off", dbg["frames_received"] == 1 and dbg["mode"] == "off")
 
 print("== web search (live, needs network) ==")
 try:

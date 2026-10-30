@@ -103,7 +103,7 @@ def prepare(meeting=None, hours_ahead=24):
         names = " ".join(p["name"] or p["email"].split("@")[0] for p in people)
         jobs["What you remember"] = pool.submit(_safe, recall.lookup, "{} {}".format(title, names).strip())
         for d in domains:
-            jobs["About " + d] = pool.submit(_safe, websearch.search, d, 2)
+            jobs["About " + d] = pool.submit(_safe, websearch.search, "What does the organisation at {} do?".format(d), 3)
 
     start = _start(event)
     lines = [

@@ -55,8 +55,25 @@ def openai_tools():
     ]
 
 
+# Replies are spoken, but models still slip into markdown. Strip the markup,
+# keep the words.
+_EMPHASIS = re.compile(r"(\*\*|__|\*|`)(?=\S)(.+?)(?<=\S)\1")
+_HEADING = re.compile(r"^\s{0,3}#{1,6}\s+", re.M)
+_BULLET = re.compile(r"^\s*(?:[-*•]|\d+[.)])\s+", re.M)
+_LINK = re.compile(r"\[([^\]]+)\]\((?:https?://[^)]+)\)")
+_EMOJI = re.compile(
+    "[\U0001F300-\U0001FAFF\U00002600-\U000027BF\U0001F000-\U0001F2FF\uFE0F\u200D]+ ?"
+)
+
+
 def clean(text):
-    return _THINK.sub("", text or "").strip()
+    text = _THINK.sub("", text or "")
+    text = _LINK.sub(r"\1", text)
+    text = _EMPHASIS.sub(r"\2", text)
+    text = _HEADING.sub("", text)
+    text = _BULLET.sub("", text)
+    text = _EMOJI.sub("", text)
+    return text.strip()
 
 
 def make_client():

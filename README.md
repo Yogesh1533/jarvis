@@ -22,44 +22,53 @@ Nemotron open models on Nebius Token Factory (set `LLM_BACKEND` and
 `LLM_MODEL` in `.env`). TTS is pluggable: Piper (local,
 free, default, with a voice per mood), ElevenLabs, or OpenAI.
 
-## Nebius x NVIDIA Global AI Hackathon: Personal AI track
+## Brains: Claude by default, Nemotron when you want it
 
-Jarvis is a voice assistant that lives on your Mac and runs its reasoning
-on NVIDIA Nemotron open models through Nebius Token Factory. Your voice,
-your memories and the wake word stay on the machine. Personal details are
-masked before any text goes to the cloud, and anything that sends,
-deletes or edits a shared meeting needs your spoken yes, enforced in code.
+Jarvis runs on **Claude Sonnet 5.5 through your Claude plan** out of the box
+(`LLM_BACKEND=agent-sdk`). Two other brains work with the same tools,
+memory, skills and confirmation gate:
 
-What the hackathon build added (branch `hackathon/nebius`):
+- `LLM_BACKEND=api`: Claude through an Anthropic API key.
+- `LLM_BACKEND=nebius`: NVIDIA Nemotron open models on Nebius Token
+  Factory. Turns are routed by rules across three sizes (Lightning for quick
+  commands, Super 120B for everyday requests, Ultra 550B for planning and
+  "prep me"), and emails, phone numbers and card numbers are swapped for
+  placeholders like `[EMAIL_1]` before any text leaves the Mac, then put back
+  just before a tool runs or Jarvis speaks. A Brain panel in the HUD shows
+  which model answered, why, how long it took and how much was masked.
 
-- **Nemotron as the brain.** `LLM_BACKEND=nebius` drives all 59 tools
-  through Token Factory's OpenAI-compatible API.
-- **A router across three model sizes.** Quick commands ("pause the
-  music") go to Nemotron 3.5 Lightning, everyday requests to Nemotron 3
-  Super 120B, and planning or "prep me" requests to Nemotron 3 Ultra 550B.
-  Rules, not an extra model call, so routing adds no latency and the HUD
-  can say why each model was picked.
-- **A privacy vault.** Emails, phone numbers and card numbers are swapped
-  for placeholders like `[EMAIL_1]` in everything sent to Nebius, then
-  restored on the Mac just before a tool runs and before Jarvis speaks.
-- **Meeting prep.** "Prep me for my 2pm" pulls the meeting, recent email
-  with each attendee, what Jarvis remembers about them and a web look at
-  their company in parallel. Nemotron Ultra turns it into an on-screen
-  briefing card and a short spoken summary.
-- **A Brain panel in the HUD** showing which model answered, why, how
-  long it took, the tokens used and how many values were masked.
-- **Screen reading** through Nemotron 3.5 Super VL, which describes a
-  screenshot for the text models.
-- **Tests and an eval.** 249 offline checks (including one where the model
-  tries to approve its own email send) and a tool-calling eval over 27
-  everyday voice requests (`tests/tool_eval.py`).
+You can switch from the command palette or by voice ("use the faster
+model"). Design details are in [ARCHITECTURE.md](ARCHITECTURE.md#three-llm-backends).
 
-![Jarvis architecture: local senses on the Mac, a privacy vault, and Nemotron models on Nebius Token Factory](docs/jarvis-architecture.png)
+![Jarvis architecture: local senses on the Mac, a privacy vault, and the cloud brain](docs/jarvis-architecture.png)
 
-Quick start on Nebius: set `LLM_BACKEND=nebius` and `NEBIUS_API_KEY` in
-`.env`, run `python -m jarvis nebius-models --probe` to check model
-access, then `python -m jarvis web` (see section 4b). Design details are
-in [ARCHITECTURE.md](ARCHITECTURE.md#three-llm-backends).
+## What else is in this version
+
+- **Reusable skills.** Do something once, then say "save that as my
+  end-of-day skill". Jarvis stores the steps, and "run my end-of-day skill"
+  does it again through the same confirmation gate. Three starter skills
+  ship in `skills/`; yours are kept in `data/skills/`.
+- **A calm home screen.** A greeting, your next meeting, open tasks, the
+  weather, quick-action chips and a shelf of your saved skills.
+- **Meeting prep.** "Prep me for my 2pm" pulls the meeting, recent email with
+  each attendee, what Jarvis remembers about them and a web look at their
+  company, then puts a briefing card on screen.
+- **Better web search.** With a free `TAVILY_API_KEY`, web search, news, page
+  reading and meeting prep use Tavily; without one, DuckDuckGo.
+- **Clearer confirmations.** Jarvis calls the risky tool straight away and
+  lets the on-screen Approve / Decline (or your voice) decide, instead of
+  asking twice. After a Decline it says so in one sentence and moves on.
+- **Wake on the name without a model.** If no openWakeWord model is
+  available, `audio/spotter.py` transcribes short bursts of speech locally
+  and wakes on "Jarvis".
+- **A demo profile.** `scripts/seed_demo.py` fills a separate demo Google
+  account, tasks, memories and files with fictional data, and
+  `scripts/run_demo.sh` launches the app on that profile, so recordings
+  never show your real inbox.
+
+Sister project: [Saathi](https://github.com/Yogesh1533/saathi), the
+Nemotron-first build of this assistant made for the Nebius x NVIDIA Global
+AI Hackathon.
 
 Built by Yogesh Dhakal.
 

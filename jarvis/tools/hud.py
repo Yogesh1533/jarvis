@@ -4,7 +4,7 @@ from .. import hud_bridge, settings
 _NO_HUD = "The HUD isn't open right now, so describe it aloud instead."
 
 ACTIONS = (
-    "open_history", "open_settings", "open_palette", "close_panels",
+    "open_history", "open_settings", "open_skills", "open_palette", "close_panels",
     "clear_cards", "orb_mode", "full_mode", "toggle_fullscreen", "mute_mic",
 )
 

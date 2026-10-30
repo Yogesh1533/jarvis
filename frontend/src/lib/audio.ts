@@ -50,24 +50,33 @@ class AudioEngine {
       if (!deviceId || (e as Error).name !== "OverconstrainedError") throw e;
       stream = await navigator.mediaDevices.getUserMedia({ audio: constraints });
     }
-    let ctx: AudioContext;
+    // Past this point the mic is open: if the rest of the setup fails, let it go
+    // (otherwise the browser shows the mic as in use while Jarvis can't hear it).
+    let ctx: AudioContext | null = null;
+    let node: AudioWorkletNode;
     try {
-      ctx = new AudioContext({ sampleRate: 16000, latencyHint: "interactive" });
-    } catch {
-      ctx = new AudioContext(); // the worklet downsamples instead
+      try {
+        ctx = new AudioContext({ sampleRate: 16000, latencyHint: "interactive" });
+      } catch {
+        ctx = new AudioContext(); // the worklet downsamples instead
+      }
+      if (ctx.state === "suspended") await ctx.resume();
+      await ctx.audioWorklet.addModule("/pcm-worklet.js");
+      const src = ctx.createMediaStreamSource(stream);
+      this.micAnalyser = ctx.createAnalyser();
+      this.micAnalyser.fftSize = 1024;
+      src.connect(this.micAnalyser);
+      node = new AudioWorkletNode(ctx, "pcm-capture");
+      node.port.onmessage = (e) => onFrame(e.data as ArrayBuffer);
+      // A silent sink keeps the worklet pulled by the audio graph.
+      const sink = ctx.createGain();
+      sink.gain.value = 0;
+      src.connect(node).connect(sink).connect(ctx.destination);
+    } catch (e) {
+      stream.getTracks().forEach((t) => t.stop());
+      ctx?.close().catch(() => {});
+      throw e;
     }
-    if (ctx.state === "suspended") await ctx.resume();
-    await ctx.audioWorklet.addModule("/pcm-worklet.js");
-    const src = ctx.createMediaStreamSource(stream);
-    this.micAnalyser = ctx.createAnalyser();
-    this.micAnalyser.fftSize = 1024;
-    src.connect(this.micAnalyser);
-    const node = new AudioWorkletNode(ctx, "pcm-capture");
-    node.port.onmessage = (e) => onFrame(e.data as ArrayBuffer);
-    // A silent sink keeps the worklet pulled by the audio graph.
-    const sink = ctx.createGain();
-    sink.gain.value = 0;
-    src.connect(node).connect(sink).connect(ctx.destination);
     stream.getAudioTracks().forEach((t) => {
       t.onended = () => {
         if (this.micStream === stream) onLost?.();

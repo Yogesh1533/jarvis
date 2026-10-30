@@ -18,3 +18,4 @@ desktop/out.nosync/
 # Private to the author: demo/filming helpers, slide deck
 scripts/
 presentation/
+.DS_Store

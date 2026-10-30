@@ -6,7 +6,7 @@ or tests interchangeably.
 from datetime import datetime
 
 from . import config, settings, tools
-from .tools import memory
+from .tools import memory, skills
 
 _MAX_TOOL_ROUNDS = 12
 
@@ -19,6 +19,9 @@ def build_system_prompt():
             )
         )
     text = config.SYSTEM_PROMPT_PATH.read_text(encoding="utf-8")
+    skill_index = skills.index_for_prompt()
+    if skill_index:
+        text += "\n\n## Your skills\n\nRun one with `skill_run` when a request matches it.\n\n" + skill_index
     memories, full = memory.load_for_prompt()
     if memories and full:
         text += "\n\n## Your saved memories\n\n" + memories
@@ -105,6 +108,7 @@ class Assistant:
 
         Returns the assistant's final spoken/printed reply.
         """
+        skills.begin_turn()
         if self.backend is not None:
             return self.backend.chat(user_text)
 

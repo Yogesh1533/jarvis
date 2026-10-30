@@ -334,7 +334,15 @@ export function Reactor({ onActivate }: { onActivate: () => void }) {
       bloom.resolution.set(w, h);
       camera.aspect = w / h;
       // Keep the whole dial in frame on tall/narrow screens.
-      camera.position.z = w / h < 1 ? 8.4 / Math.max(w / h, 0.55) : 8.4;
+      const base = w / h < 1 ? 8.4 / Math.max(w / h, 0.55) : 8.4;
+      // The home screen puts a greeting above the orb and actions below it:
+      // shrink the dial into the free band between them and centre it there.
+      const css = getComputedStyle(document.documentElement);
+      const top = parseFloat(css.getPropertyValue("--stage-top")) || 0;
+      const bottom = parseFloat(css.getPropertyValue("--stage-bottom")) || 0;
+      const free = Math.max(0.5, (h - top - bottom) / h);
+      camera.position.z = base / free;
+      camera.setViewOffset(w, h, 0, -(top - bottom) / 2, w, h);
       camera.updateProjectionMatrix();
     };
     const ro = new ResizeObserver(resize);

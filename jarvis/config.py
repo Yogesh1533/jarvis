@@ -39,6 +39,10 @@ NEBIUS_VISION_MODEL = os.getenv("NEBIUS_VISION_MODEL", "nvidia/Nemotron-3.5-Supe
 # (snappy voice replies) or "/think"; Llama-Nemotron uses "detailed thinking off".
 NEBIUS_SYSTEM_PREFIX = os.getenv("NEBIUS_SYSTEM_PREFIX", "/no_think")
 NEBIUS_TEMPERATURE = _float("NEBIUS_TEMPERATURE", 0.3)
+
+# Tavily web search for agents (web_search, news, page reading, meeting prep).
+# Empty = DuckDuckGo, free and keyless.
+TAVILY_API_KEY = os.getenv("TAVILY_API_KEY", "")
 # Mask emails, phone and card numbers before anything is sent to Nebius.
 NEBIUS_PRIVACY = os.getenv("NEBIUS_PRIVACY", "on").strip().lower() not in ("off", "0", "false", "no")
 if LLM_BACKEND == "nebius" and LLM_MODEL.startswith("claude-"):
@@ -61,7 +65,13 @@ ELEVENLABS_VOICE_ID = os.getenv("ELEVENLABS_VOICE_ID", "21m00Tcm4TlvDq8ikWAM")
 OPENAI_TTS_VOICE = os.getenv("OPENAI_TTS_VOICE", "alloy")
 
 # Wake word
+# The name of a built-in openWakeWord model ("hey_jarvis" ships with the
+# library) or a path to a custom .onnx model.
 WAKE_WORD_MODEL = os.getenv("WAKE_WORD_MODEL", "hey_jarvis")
+WAKE_WORD_LABEL = Path(WAKE_WORD_MODEL).stem.replace("_", " ")
+# With no wake-word model, wake on the name by transcribing speech bursts
+# with the local Whisper model (more compute; off = press Space to talk).
+WAKE_BY_NAME = os.getenv("WAKE_BY_NAME", "on").strip().lower() not in ("off", "0", "false", "no")
 WAKE_THRESHOLD = _float("WAKE_THRESHOLD", 0.5)
 
 # Timings
@@ -108,3 +118,7 @@ SYSTEM_PROMPT_PATH = _path(
 )
 MEMORY_DIR = _path("MEMORY_DIR", "./memory")
 DB_PATH = _path("DB_PATH", "./data/jarvis.db")
+# First name for the greeting on the home screen (optional).
+USER_NAME = os.getenv("USER_NAME", "").strip()
+SKILLS_DIR = _path("SKILLS_DIR", "./data/skills")     # the user's own skills
+STARTER_SKILLS_DIR = ROOT / "skills"                  # shipped with the project

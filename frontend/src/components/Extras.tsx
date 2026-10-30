@@ -240,6 +240,7 @@ function useCommands(): Command[] {
       { id: "fill", group: "Settings", label: "“One moment” fillers", hint: on(server.fillers), run: () => setServer({ fillers: !server.fillers }) },
       { id: "speak", group: "Settings", label: "Speak typed replies", hint: on(server.speak), run: () => setServer({ speak: !server.speak }) },
       { id: "auto", group: "Settings", label: "Pick mood automatically", hint: on(server.auto_mood), run: () => setServer({ auto_mood: !server.auto_mood }) },
+      { id: "skills", group: "Window", label: "Skills", run: () => runHudAction("open_skills") },
       { id: "hist", group: "Window", label: "Conversation history", run: () => runHudAction("open_history") },
       { id: "set", group: "Window", label: "Settings", run: () => runHudAction("open_settings") },
       { id: "cards", group: "Window", label: "Clear cards", run: () => runHudAction("clear_cards") },

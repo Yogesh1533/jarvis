@@ -47,6 +47,7 @@ export function panelsForTool(name: string): Panel[] {
   if (name.startsWith("reminder_")) return ["reminders"];
   if (name.startsWith("timer_")) return ["timers"];
   if (name.startsWith("memory_")) return ["memory"];
+  if (name.startsWith("skill_")) return ["skills"];
   if (name.startsWith("calendar_")) return ["agenda"];
   if (name.startsWith("gmail_")) return ["mail"];
   if (name === "mac_set_volume") return ["system", "media"];

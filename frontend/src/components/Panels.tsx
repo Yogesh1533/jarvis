@@ -152,7 +152,7 @@ export function TimersPanel() {
   };
 
   return (
-    <Panel title="Timers and reminders" meta={live.length + reminders.length || undefined}>
+    <Panel title="Timers and reminders" meta={live.length + reminders.length || undefined} fold="open">
       {live.length === 0 && reminders.length === 0 && !rems.loading && (
         <Empty>Nothing pending. Try “set a ten minute timer for tea”.</Empty>
       )}
@@ -210,7 +210,7 @@ export function MailPanel() {
   const res = usePanelData<Mail>("/api/mail", "mail", 3 * 60_000);
   const items = res.data?.items ?? [];
   return (
-    <Panel title="Inbox" meta={res.data ? `${res.data.count} unread` : undefined}>
+    <Panel title="Inbox" meta={res.data ? `${res.data.count} unread` : undefined} fold="open">
       <PanelStatus loading={res.loading} error={res.error} what="inbox" />
       {res.data && items.length === 0 && <Empty>Inbox zero. Nothing unread.</Empty>}
       <ul className="mail">
@@ -309,7 +309,7 @@ export function MediaPanel() {
   };
 
   return (
-    <Panel title="Now playing" meta={now?.app} className="media-panel">
+    <Panel title="Now playing" meta={now?.app} className="media-panel" fold="open">
       {res.loading && !res.data && <Empty>Checking what's playing…</Empty>}
       {res.data && !now && <Empty>Nothing playing. Start something in YouTube Music, or ask me to.</Empty>}
       {now && (
@@ -397,7 +397,7 @@ export function SystemPanel() {
   const res = usePanelData<Sys>("/api/system", "system", 3000);
   const d = res.data;
   return (
-    <Panel title="Diagnostics" meta={d?.host}>
+    <Panel title="Diagnostics" meta={d?.host} fold="closed">
       <PanelStatus loading={res.loading && !d} error={d ? undefined : res.error} what="system status" />
       {d && (
         <>
@@ -495,7 +495,7 @@ export function MemoryPanel() {
   };
 
   return (
-    <Panel title="What Jarvis knows" meta={res.data ? items.length : undefined}>
+    <Panel title="What Jarvis knows" meta={res.data ? items.length : undefined} fold="closed">
       <PanelStatus loading={res.loading} error={res.error} what="memories" />
       {res.data && items.length === 0 && (
         <Empty>Nothing yet. Tell Jarvis something worth keeping, like “remember my sister’s birthday is March 3rd”.</Empty>
