@@ -1173,12 +1173,14 @@ check("voice debug counts audio frames even while the pipeline is off", dbg["fra
 # ---- files: fall back to word matching when the whole phrase finds nothing
 import tempfile as _tf
 from jarvis.tools import files as _files
-_d = Path(_tf.mkdtemp()); (_d / "Northwind-Budget.csv").write_text("line,amount\nfront end,12000\n"); (_d / "notes.txt").write_text("lunch")
+_d = Path(_tf.mkdtemp()); (_d / "Northwind-Budget.csv").write_text("line,amount\nfront end,12000\n"); (_d / "notes.txt").write_text("the budget breakdown is an open action"); (_d / "lunch.txt").write_text("lunch with Mei")
 _old_roots, _old_find = config.FILES_ROOTS, _files._find
 config.FILES_ROOTS = [_d]
-_files._find = lambda root, q: [str(p) for p in root.rglob("*") if q.lower() in p.name.lower() or q.lower() in p.read_text().lower()]
+_files._find = lambda root, q: [str(p) for p in root.rglob("*") if all(w in (p.name + " " + p.read_text()).lower() for w in q.lower().split())]
 _r = _files.search("Northwind budget breakdown")
-check("files: a phrase with extra words still finds the file", "Northwind-Budget.csv" in _r and "notes.txt" not in _r)
+check("files: a phrase with extra words still finds the file", "Northwind-Budget.csv" in _r and "lunch.txt" not in _r)
+_r2 = _files.search("budget breakdown")
+check("files: exact matches come first, close ones after", _r2.splitlines()[0].endswith("notes.txt") and "Northwind-Budget.csv" in _r2)
 check("files: an exact phrase match is returned as-is", _files.search("Northwind-Budget").strip().endswith("Northwind-Budget.csv"))
 check("files: nothing at all says so", _files.search("zebra quantum").startswith("No files match"))
 config.FILES_ROOTS, _files._find = _old_roots, _old_find

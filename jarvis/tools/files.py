@@ -45,33 +45,40 @@ def _find(root, query):
 
 
 def search(query, max_results=15):
-    """Find files by name or content. Tries the whole phrase first; if nothing
-    matches (the model often adds words the file doesn't contain, like
-    "Northwind budget breakdown" for Northwind-Budget.csv), it searches each
-    word and ranks files by how many of the words they match."""
+    """Find files by name or content. Exact phrase matches come first. Spotlight
+    needs every word, and the model often adds words a file doesn't contain
+    ("Northwind budget breakdown" for Northwind-Budget.csv), so files matching
+    the individual words follow, ranked by how many words they match (a word in
+    the file name counts double)."""
     max_results = int(max_results)
     roots = [r for r in config.FILES_ROOTS if r.is_dir()]
-    hits = []
+    exact = []
     for root in roots:
-        hits.extend(h for h in _find(root, query) if h not in hits)
-        if len(hits) >= max_results:
+        exact.extend(h for h in _find(root, query) if h not in exact)
+        if len(exact) >= max_results:
             break
-    if hits:
-        return "\n".join(hits[:max_results])
     words = [w for w in re.findall(r"[\w-]{3,}", query.lower()) if w not in _STOP]
-    if len(words) < 2:
-        return "No files match {!r}.".format(query)
     score = {}
-    for w in words:
-        for root in roots:
-            for h in _find(root, w):
-                name = Path(h).name.lower()
-                score[h] = score.get(h, 0) + (2 if w in name else 1)
-    if not score:
+    if len(words) >= 2 and len(exact) < max_results:
+        for w in words:
+            for root in roots:
+                for h in _find(root, w):
+                    if h in exact:
+                        continue
+                    name = Path(h).name.lower()
+                    score[h] = score.get(h, 0) + (2 if w in name else 1)
+    # Keep only files matching more than one word, or a word in their name.
+    close = sorted((h for h in score if score[h] >= 2), key=lambda h: (-score[h], h))
+    if not exact and not close:
         return "No files match {!r}.".format(query)
-    ranked = sorted(score, key=lambda h: (-score[h], h))
-    return "No exact match for {!r}. Closest files by the words in it:\n{}".format(
-        query, "\n".join(ranked[:max_results]))
+    out = exact[:max_results]
+    room = max_results - len(out)
+    if close and room > 0:
+        out_close = close[:room]
+        if out:
+            return "\n".join(out) + "\nAlso close (match some of the words):\n" + "\n".join(out_close)
+        return "No exact match for {!r}. Closest files by the words in it:\n{}".format(query, "\n".join(out_close))
+    return "\n".join(out)
 
 
 def read(path):
