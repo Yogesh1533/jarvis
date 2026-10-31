@@ -1,5 +1,6 @@
 """Gmail: read, search, draft — sending is gated behind user confirmation."""
 import base64
+import time
 from email.mime.text import MIMEText
 from html import unescape
 
@@ -72,15 +73,34 @@ def read(message_id):
     )
 
 
+# Recent drafts by (recipient, subject), so a model that drafts the same email
+# twice in one turn updates the first draft instead of leaving a duplicate.
+_recent_drafts = {}
+_DRAFT_REUSE_SECONDS = 600
+
+
 def create_draft(to, subject, body):
     svc = _service()
     mime = MIMEText(body)
     mime["to"] = to
     mime["subject"] = subject
     raw = base64.urlsafe_b64encode(mime.as_bytes()).decode()
+    key = (to.strip().lower(), subject.strip().lower())
+    now = time.time()
+    prev = _recent_drafts.get(key)
+    if prev and now - prev[1] < _DRAFT_REUSE_SECONDS:
+        try:
+            draft = svc.users().drafts().update(
+                userId="me", id=prev[0], body={"id": prev[0], "message": {"raw": raw}}
+            ).execute()
+            _recent_drafts[key] = (draft["id"], now)
+            return "Draft updated (id {}) to {} — subject: {}. Not sent.".format(draft["id"], to, subject)
+        except Exception:
+            pass  # sent or deleted since: make a new one
     draft = svc.users().drafts().create(
         userId="me", body={"message": {"raw": raw}}
     ).execute()
+    _recent_drafts[key] = (draft["id"], now)
     return "Draft created (id {}) to {} — subject: {}. Not sent.".format(
         draft["id"], to, subject
     )

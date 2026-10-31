@@ -128,6 +128,9 @@ print("== confirmation gate: gmail send (fake service) ==")
 sent = []
 
 
+drafts_made, drafts_updated = [], []
+
+
 class FakeDrafts:
     def get(self, userId, id, format):
         return SimpleNamespace(execute=lambda: {
@@ -139,6 +142,14 @@ class FakeDrafts:
 
     def send(self, userId, body):
         return SimpleNamespace(execute=lambda: sent.append(body["id"]))
+
+    def create(self, userId, body):
+        drafts_made.append(body)
+        return SimpleNamespace(execute=lambda: {"id": "d%d" % len(drafts_made)})
+
+    def update(self, userId, id, body):
+        drafts_updated.append(id)
+        return SimpleNamespace(execute=lambda: {"id": id})
 
 
 class FakeUsers:
@@ -158,6 +169,14 @@ prompts = []
 out, err = tools.execute("gmail_send_draft", {"draft_id": "d1"}, confirm=lambda p: prompts.append(p) or True)
 check("confirmation prompt names recipient", "alice@example.com" in prompts[0])
 check("confirmed send goes through", sent == ["d1"])
+
+gmail._recent_drafts.clear()
+gmail.create_draft("sam@example.com", "Budget", "v1")
+r = gmail.create_draft("Sam@example.com", "Budget", "v2")
+check("drafting the same email twice updates one draft", len(drafts_made) == 1 and drafts_updated == ["d1"] and "updated" in r)
+gmail.create_draft("sam@example.com", "Another subject", "x")
+check("a different subject makes a new draft", len(drafts_made) == 2)
+gmail._recent_drafts.clear()
 
 print("== assistant loop (scripted fake model) ==")
 
