@@ -25,4 +25,7 @@ def run():
         if user.lower() in ("quit", "exit"):
             break
         reply = assistant.chat(user)
+        brain = assistant.brain()
+        if brain:
+            print("  [brain] {route} · {model} · {seconds}s · {masked} masked".format(**brain))
         print("Jarvis: {}\n".format(reply))

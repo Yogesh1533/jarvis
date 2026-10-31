@@ -17,9 +17,60 @@ web search, and a persistent memory it maintains about you.
   [config/jarvis-voice-assistant-system-prompt.md](config/jarvis-voice-assistant-system-prompt.md).
   Edit it freely; no code changes needed.
 
-Brain: Claude Sonnet 5.5 by default, through your Claude plan (set
-`LLM_MODEL` and `LLM_BACKEND` in `.env`). TTS is pluggable: Piper (local,
+Brain: Claude Sonnet 5.5 by default, through your Claude plan, or NVIDIA
+Nemotron open models on Nebius Token Factory (set `LLM_BACKEND` and
+`LLM_MODEL` in `.env`). TTS is pluggable: Piper (local,
 free, default, with a voice per mood), ElevenLabs, or OpenAI.
+
+## Brains: Claude by default, Nemotron when you want it
+
+Jarvis runs on **Claude Sonnet 5.5 through your Claude plan** out of the box
+(`LLM_BACKEND=agent-sdk`). Two other brains work with the same tools,
+memory, skills and confirmation gate:
+
+- `LLM_BACKEND=api`: Claude through an Anthropic API key.
+- `LLM_BACKEND=nebius`: NVIDIA Nemotron open models on Nebius Token
+  Factory. Turns are routed by rules across three sizes (Lightning for quick
+  commands, Super 120B for everyday requests, Ultra 550B for planning and
+  "prep me"), and emails, phone numbers and card numbers are swapped for
+  placeholders like `[EMAIL_1]` before any text leaves the Mac, then put back
+  just before a tool runs or Jarvis speaks. A Brain panel in the HUD shows
+  which model answered, why, how long it took and how much was masked.
+
+You can switch from the command palette or by voice ("use the faster
+model"). Design details are in [ARCHITECTURE.md](ARCHITECTURE.md#three-llm-backends).
+
+![Jarvis architecture: local senses on the Mac, a privacy vault, and the cloud brain](docs/jarvis-architecture.png)
+
+## What else is in this version
+
+- **Reusable skills.** Do something once, then say "save that as my
+  end-of-day skill". Jarvis stores the steps, and "run my end-of-day skill"
+  does it again through the same confirmation gate. Three starter skills
+  ship in `skills/`; yours are kept in `data/skills/`.
+- **A calm home screen.** A greeting, your next meeting, open tasks, the
+  weather, quick-action chips and a shelf of your saved skills.
+- **Meeting prep.** "Prep me for my 2pm" pulls the meeting, recent email with
+  each attendee, what Jarvis remembers about them and a web look at their
+  company, then puts a briefing card on screen.
+- **Better web search.** With a free `TAVILY_API_KEY`, web search, news, page
+  reading and meeting prep use Tavily; without one, DuckDuckGo.
+- **Clearer confirmations.** Jarvis calls the risky tool straight away and
+  lets the on-screen Approve / Decline (or your voice) decide, instead of
+  asking twice. After a Decline it says so in one sentence and moves on.
+- **Wake on the name without a model.** If no openWakeWord model is
+  available, `audio/spotter.py` transcribes short bursts of speech locally
+  and wakes on "Jarvis".
+- **A demo profile.** `scripts/seed_demo.py` fills a separate demo Google
+  account, tasks, memories and files with fictional data, and
+  `scripts/run_demo.sh` launches the app on that profile, so recordings
+  never show your real inbox.
+
+Sister project: [Saathi](https://github.com/Yogesh1533/saathi), the
+Nemotron-first build of this assistant made for the Nebius x NVIDIA Global
+AI Hackathon.
+
+Built by Yogesh Dhakal.
 
 ---
 
@@ -62,6 +113,27 @@ curl -fsSL https://claude.ai/install.sh | bash   # installs ~/.local/bin/claude
 <https://platform.claude.com> (Settings → API keys), put it in `.env` as
 `ANTHROPIC_API_KEY=sk-ant-...`, and add API credits under Settings →
 Billing (billed separately from a Claude subscription).
+
+**Option C — NVIDIA Nemotron on Nebius Token Factory (open models).**
+Create a key in the [Token Factory](https://tokenfactory.nebius.com)
+console and set, in `.env`:
+
+```bash
+LLM_BACKEND=nebius
+NEBIUS_API_KEY=...
+```
+
+Then see which NVIDIA models your key can use, and check they do tool
+calling, and put the one you want in `NEBIUS_MODEL`:
+
+```bash
+python -m jarvis nebius-models --probe
+```
+
+The wake word, speech-to-text and memory recall still run on your Mac.
+Only the conversation text and tool results (including email and calendar
+content Jarvis reads for you) go to Nebius. The confirmation gate works
+exactly the same on every backend.
 
 ## 4. First run — text mode (no audio needed)
 
@@ -285,10 +357,10 @@ Things to try:
 <plist version="1.0"><dict>
   <key>Label</key><string>com.yogesh.jarvis</string>
   <key>ProgramArguments</key><array>
-    <string>/Users/yogesh/Documents/jarvis/.venv/bin/python</string>
+    <string>/Users/yogesh/Developer/apps/jarvis/.venv/bin/python</string>
     <string>-m</string><string>jarvis</string><string>voice</string>
   </array>
-  <key>WorkingDirectory</key><string>/Users/yogesh/Documents/jarvis</string>
+  <key>WorkingDirectory</key><string>/Users/yogesh/Developer/apps/jarvis</string>
   <key>RunAtLoad</key><true/>
   <key>KeepAlive</key><true/>
   <key>StandardOutPath</key><string>/tmp/jarvis.log</string>
@@ -330,6 +402,21 @@ turn-taking (pausing mid-thought, "let me think", barge-in pre-roll),
 moods and voice-controlled settings, HUD cards, web search, and proves the
 confirmation gate blocks unconfirmed sends — including a simulated model
 that tries to set the confirmation flag itself.
+
+## 9b. Tool-calling eval (Nebius)
+
+```bash
+python tests/tool_eval.py --limit 10   # quick check, ~100k tokens
+python tests/tool_eval.py              # all 27 requests on auto routing, ~270k tokens
+python tests/tool_eval.py --configs auto lightning super ultra   # full comparison, ~1M
+```
+
+27 everyday voice requests, each in a fresh conversation with the real
+system prompt and every tool offered. Tools are stubbed, so nothing is
+actually sent or changed. It scores whether the model picks the right tool
+and how fast it decides (one request per case), and writes
+`tests/tool_eval_results.md`. It uses real tokens and stops at `--budget`
+(default 300k).
 
 ## Troubleshooting
 

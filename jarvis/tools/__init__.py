@@ -10,6 +10,7 @@ an underscore is stripped from model-supplied input before dispatch, and
 the confirmation flag is only ever set by this dispatcher within the same
 conversation turn.
 """
+from .. import config
 
 
 class ConfirmationRequired(Exception):
@@ -34,8 +35,17 @@ def _result(value):
 
 
 DECLINED_MESSAGE = (
-    "The user declined the confirmation. The action was NOT performed. "
-    "Do not retry it; ask the user what they would like instead."
+    "The user pressed Decline. The action was NOT performed and nothing was sent or changed. "
+    "Tell them in one short sentence that you did not do it, and offer one alternative "
+    "(for example keeping it as a draft). Do not ask them to confirm again and do not "
+    "call the tool again."
+)
+
+_MODEL_CHOICES = (
+    "lightning (fastest), super (balanced), ultra (deepest), or default "
+    "(pick automatically per request)"
+    if config.LLM_BACKEND == "nebius"
+    else "sonnet (balanced), opus (deepest), haiku (fastest), fable, or default"
 )
 
 TOOL_SCHEMAS = [
@@ -234,7 +244,7 @@ TOOL_SCHEMAS = [
     # ── Web search ─────────────────────────────────────────────────
     {
         "name": "web_search",
-        "description": "Search the web (DuckDuckGo). Use for anything current or outside your knowledge.",
+        "description": "Search the web (Tavily, ranked for agents, with a short summary). Use for anything current or outside your knowledge.",
         "input_schema": {
             "type": "object",
             "properties": {
@@ -302,7 +312,7 @@ TOOL_SCHEMAS = [
     # ── News & web pages ───────────────────────────────────────────
     {
         "name": "news_headlines",
-        "description": "Latest news headlines, optionally about a topic (DuckDuckGo News).",
+        "description": "Latest news from the past week, optionally about a topic.",
         "input_schema": {
             "type": "object",
             "properties": {
@@ -360,6 +370,71 @@ TOOL_SCHEMAS = [
         },
     },
     # ── Briefing & system ──────────────────────────────────────────
+    # ── Skills ─────────────────────────────────────────────────────
+    {
+        "name": "skill_save",
+        "description": (
+            "Save a reusable skill: a named workflow the user can run again later. Use when "
+            "they say 'save that as a skill', 'remember how to do this', 'make this my "
+            "<name> routine'. Write the steps as a short numbered list a future you can follow, "
+            "with what to adapt each time. The tool calls from the previous turn are recorded "
+            "with it automatically."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "name": {"type": "string", "description": "Short name, e.g. 'end of day'"},
+                "description": {"type": "string", "description": "One line: what it does and when to use it"},
+                "steps": {"type": "string", "description": "Numbered steps, one per line"},
+                "use_last_turn": {"type": "boolean", "description": "Record the previous turn's tool calls. Default true"},
+            },
+            "required": ["name", "description", "steps"],
+        },
+    },
+    {
+        "name": "skill_run",
+        "description": (
+            "Run one of the user's saved skills by name ('run my end of day skill', 'do my "
+            "morning kickoff'). Returns the steps; then carry them out with your tools."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {"name": {"type": "string", "description": "Skill name, or part of it"}},
+            "required": ["name"],
+        },
+    },
+    {
+        "name": "skill_list",
+        "description": "List the user's skills with what each one does.",
+        "input_schema": {"type": "object", "properties": {}},
+    },
+    {
+        "name": "skill_delete",
+        "description": "Delete one of the user's own skills (asks the user to confirm).",
+        "input_schema": {
+            "type": "object",
+            "properties": {"name": {"type": "string"}},
+            "required": ["name"],
+        },
+    },
+    {
+        "name": "meeting_prep",
+        "description": (
+            "Prepare the user for a meeting in one call: finds it (by time like '2pm', by "
+            "title, or the next one), who's attending, recent email with them, what you "
+            "remember about them, and a web look at their organisation. Use for 'prep me "
+            "for my 2pm', 'brief me on my next meeting', 'what do I need to know for the "
+            "Digipearl meeting'. Afterwards show a hud_show_card (who, context, open "
+            "threads, talking points) and speak a 2-3 sentence summary."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "meeting": {"type": "string", "description": "A time ('2pm'), part of the title, or empty for the next meeting"},
+                "hours_ahead": {"type": "integer", "description": "How far ahead to look. Default 24"},
+            },
+        },
+    },
     {
         "name": "briefing_get",
         "description": (
@@ -642,12 +717,12 @@ TOOL_SCHEMAS = [
     {
         "name": "assistant_set_model",
         "description": (
-            "Switch the Claude model Jarvis thinks with: sonnet (balanced), opus (deepest), "
-            "haiku (fastest), fable, or default. Applies from the next reply."
+            "Switch the model Jarvis thinks with: " + _MODEL_CHOICES + ". "
+            "Pass one word. Applies from the next reply."
         ),
         "input_schema": {
             "type": "object",
-            "properties": {"model": {"type": "string", "description": "sonnet, opus, haiku, fable or default"}},
+            "properties": {"model": {"type": "string", "description": "one word: " + _MODEL_CHOICES}},
             "required": ["model"],
         },
     },
@@ -727,7 +802,7 @@ TOOL_SCHEMAS = [
         "name": "hud_control",
         "description": (
             "Operate the HUD: set_theme (value arc|mark|vibranium), "
-            "open_history, open_settings, open_palette, close_panels, "
+            "open_history, open_settings, open_skills, open_palette, close_panels, "
             "clear_cards, orb_mode (shrink to the floating orb), full_mode, "
             "toggle_fullscreen, mute_mic (stop listening until the user "
             "presses Command-J)."
@@ -738,7 +813,7 @@ TOOL_SCHEMAS = [
                 "action": {
                     "type": "string",
                     "enum": [
-                        "set_theme", "open_history", "open_settings", "open_palette",
+                        "set_theme", "open_history", "open_settings", "open_skills", "open_palette",
                         "close_panels", "clear_cards", "orb_mode", "full_mode",
                         "toggle_fullscreen", "mute_mic",
                     ],
@@ -756,7 +831,7 @@ def _handlers():
     # missing; a broken dependency surfaces as a tool error, not a crash.
     from . import (
         apple, briefing, files, gcal, gmail, hud, mac, media, memory, persona,
-        recall, reminders, screen, system, tasks, timers, weather, websearch,
+        prep, recall, reminders, screen, skills, system, tasks, timers, weather, websearch,
     )
 
     return {
@@ -787,6 +862,11 @@ def _handlers():
         "timer_list": timers.list_timers,
         "timer_cancel": timers.cancel,
         "briefing_get": briefing.get,
+        "meeting_prep": prep.prepare,
+        "skill_save": skills.save,
+        "skill_run": skills.run,
+        "skill_list": skills.list_skills,
+        "skill_delete": skills.delete,
         "system_status": system.status,
         "mac_open_app": mac.open_app,
         "mac_quit_app": mac.quit_app,
@@ -871,3 +951,9 @@ def _execute(name, args, confirm):
         return "Invalid arguments for {}: {}".format(name, exc), True
     except Exception as exc:  # noqa: BLE001 — tool errors go back to the model
         return "Tool error: {}".format(exc), True
+
+
+# Skills record the tool calls of each turn so "save that as a skill" works.
+from . import skills as _skills  # noqa: E402
+
+add_listener(_skills.on_tool)

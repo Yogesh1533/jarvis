@@ -1,4 +1,6 @@
 """Jarvis's own voice and behaviour, changeable by asking."""
+import re
+
 from .. import config, moods, settings
 
 _LABELS = {
@@ -30,17 +32,37 @@ def set_voice(voice):
     )
 
 
+def _words(model_id):
+    return re.split(r"[-/_ .]+", model_id.lower().replace("claude-", ""))
+
+
+def _spoken(model_id):
+    if model_id.startswith("claude-"):
+        return _words(model_id)[0]
+    # The word that tells Nemotron sizes apart: "super", "ultra", "lightning".
+    sizes = ("lightning", "nano", "super", "ultra")
+    return next((w for w in _words(model_id) if w in sizes), settings.MODELS[model_id])
+
+
 def set_model(model):
-    """Switch Claude model by name or family ("opus", "haiku", "default")."""
+    """Switch model by name or family ("opus", "haiku", "super", "nano", "default")."""
     key = (model or "").strip().lower()
-    if key in ("", "default", "normal", "standard", "original"):
+    if key in ("", "default", "normal", "standard", "original", "auto", "automatic"):
         settings.update(model="")
+        if config.LLM_BACKEND == "nebius":
+            return "Back to automatic: I'll pick Lightning, Super or Ultra for each request."
         return "Back to the default model, {}. It applies from my next reply.".format(
             settings.MODELS.get(config.LLM_MODEL, config.LLM_MODEL))
-    matches = [m for m in settings.MODELS if key == m or key in m.replace("claude-", "").split("-")]
+    # Accept the id, the label, one family word ("ultra"), or several words
+    # that all belong to one model ("nemotron 3 ultra").
+    wanted = _words(key)
+    matches = [
+        m for m in settings.MODELS
+        if key in (m.lower(), settings.MODELS[m].lower()) or set(wanted) <= set(_words(m))
+    ]
     if len(matches) != 1:
         raise ValueError("Say one of: {}, or default.".format(", ".join(
-            m.replace("claude-", "").split("-")[0] for m in settings.MODELS)))
+            _spoken(m) for m in settings.MODELS)))
     settings.update(model=matches[0])
     return "Switched to {}. It applies from my next reply.".format(settings.MODELS[matches[0]])
 

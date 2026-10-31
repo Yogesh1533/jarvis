@@ -4,15 +4,16 @@ import { panelsForTool } from "./lib/api";
 import { audio } from "./lib/audio";
 import { desktop, isApp } from "./lib/desktop";
 import { link, type ServerMsg } from "./lib/link";
-import { useStore, type Mode } from "./lib/store";
+import { useStore, type Brain, type Mode } from "./lib/store";
 import { Reactor } from "./components/Reactor";
 import {
   Boot, Caption, CommandBar, ConfirmDialog, HistoryDrawer, SettingsDrawer,
   StatusLine, Toasts, ToolTrace, TopBar, useHotkeys,
 } from "./components/Chrome";
 import { CommandPalette, HearingLine, HoloCards, OrbBar } from "./components/Extras";
+import { HomeBrief, ModelSwitch, QuickActions, SkillsDrawer, SkillsShelf, useIsHome } from "./components/Home";
 import {
-  AgendaPanel, MailPanel, MediaPanel, MemoryPanel, SystemPanel, TasksPanel, TimersPanel,
+  AgendaPanel, BrainPanel, MailPanel, MediaPanel, MemoryPanel, SystemPanel, TasksPanel, TimersPanel,
 } from "./components/Panels";
 
 // The server owns the state machine; until the boot sequence finishes we
@@ -61,6 +62,9 @@ function handle(msg: ServerMsg) {
     case "voice": {
       const { ready, wake, mic, error, wake_word } = msg;
       s.set({ voice: { ready, wake, mic, error, wake_word } });
+      // Another window that owned the mic can close and leave the server deaf to
+      // this one: if ours is open, claim it again.
+      if (!mic && audio.micActive && s.local.mic) link.send({ type: "mic", on: true });
       break;
     }
     case "wake":
@@ -100,6 +104,11 @@ function handle(msg: ServerMsg) {
         if (panels.length) s.bump(...panels);
       }
       break;
+    case "brain": {
+      const { type: _t, ...turn } = msg;
+      s.set({ brain: [...s.brain.slice(-11), turn as Brain] });
+      break;
+    }
     case "reply":
       s.setCaption("jarvis", msg.text);
       s.addLog("jarvis", msg.text, msg.error);
@@ -149,6 +158,7 @@ export default function App() {
   const layout = useStore((s) => s.layout);
   const drawer = useStore((s) => s.drawer);
   const palette = useStore((s) => s.palette);
+  const home = useIsHome();
   useHotkeys(inputRef);
 
   useEffect(() => {
@@ -209,14 +219,27 @@ export default function App() {
           <TimersPanel />
         </div>
         <div className="center">
-          <HoloCards />
-          <StatusLine />
-          <HearingLine />
-          <ToolTrace />
-          <Caption />
-          <ConfirmDialog />
+          <div className="center-top">
+            {home && <HomeBrief />}
+            <ModelSwitch />
+          </div>
+          <div className="center-bottom">
+            <HoloCards />
+            <StatusLine />
+            <HearingLine />
+            <ToolTrace />
+            <Caption />
+            <ConfirmDialog />
+            {home && (
+              <>
+                <QuickActions />
+                <SkillsShelf />
+              </>
+            )}
+          </div>
         </div>
         <div className="col col-right">
+          <BrainPanel />
           <MediaPanel />
           <MailPanel />
           <SystemPanel />
@@ -227,6 +250,7 @@ export default function App() {
       <Toasts />
       {drawer === "history" && <HistoryDrawer />}
       {drawer === "settings" && <SettingsDrawer />}
+      {drawer === "skills" && <SkillsDrawer />}
       {palette && <CommandPalette />}
       {!ready && <Boot onDone={onBooted} auto={isApp} />}
     </div>

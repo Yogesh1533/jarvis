@@ -147,7 +147,9 @@ privileges. The microphone is granted only to the local server's origin.
 | Piece | File(s) | Notes |
 |---|---|---|
 | Config | `jarvis/config.py`, `.env` | All keys, paths, and timings. Nothing sensitive in code. |
-| Wake word | `audio/wake.py` | openWakeWord `hey_jarvis` model, ONNX runtime, 80 ms frames at 16 kHz. Runs continuously; nothing is recorded or sent anywhere until it fires. |
+| Wake word | `audio/wake.py`, `audio/spotter.py` | openWakeWord's built-in `hey_jarvis` model (or a custom `.onnx` path), ONNX runtime, 80 ms frames at 16 kHz. With no model, `spotter.py` cuts idle speech into bursts (Silero VAD), transcribes each with the local Whisper model and wakes on the name. Runs continuously; nothing is recorded or sent anywhere until it fires. |
+| Skills | `tools/skills.py`, `skills/`, `data/skills/` | Workflows saved as Markdown steps (or `name/SKILL.md` folders), listed at the end of the system prompt, run through the normal tool loop and confirmation gate. |
+| Web search | `tools/websearch.py` | Tavily search, news and extract when `TAVILY_API_KEY` is set; DuckDuckGo and a readable-text fetch otherwise. |
 | Turn-taking | `audio/turns.py`, `audio/recorder.py` | Silero VAD + transcript-based end-of-turn (see above). |
 | STT | `audio/stt.py` | Whisper large-v3-turbo on the Apple GPU via `mlx-whisper` (default on Apple Silicon), `faster-whisper` on the CPU elsewhere, or the OpenAI Whisper API (`STT_PROVIDER=openai`). `STT_VOCABULARY` primes it with names to expect. |
 | Brain | `jarvis/assistant.py` | Multi-turn conversation, manual tool loop, prompt caching (`cache_control` on the system block), refusal handling with server-side model fallback. |
@@ -187,7 +189,34 @@ The enforcement lives in `jarvis/tools/__init__.py`:
 If the user declines, the tool returns a "user declined, do not retry"
 result to the model, which reports back and moves on.
 
-## Two LLM backends
+## Three LLM backends
+
+With `LLM_BACKEND=nebius`:
+
+```mermaid
+flowchart LR
+  subgraph mac["Your Mac"]
+    mic([Mic]) --> wake["Wake word<br/>openWakeWord"]
+    wake --> stt["Speech to text<br/>Whisper on the GPU"]
+    stt --> router{"Router"}
+    router --> vault["Privacy vault<br/>masks emails, phones, cards"]
+    vault -- "tool call, unmasked" --> gate["Confirmation gate<br/>spoken yes for risky actions"]
+    gate --> tools["Tools: Gmail, Calendar, tasks,<br/>reminders, Mac, files, web"]
+    tools -- "result, masked" --> vault
+    mem[("Memory + recall<br/>local embeddings")] --> tools
+    vault -- "reply, unmasked" --> tts["Piper voice"] --> spk([Speaker])
+    vault -.-> hud["HUD + Brain panel"]
+  end
+  subgraph nebius["Nebius Token Factory"]
+    L["Nemotron 3.5 Lightning<br/>quick commands"]
+    S["Nemotron 3 Super 120B<br/>everyday requests"]
+    U["Nemotron 3 Ultra 550B<br/>planning, meeting prep"]
+    V["Nemotron 3.5 Super VL<br/>screenshots"]
+  end
+  vault <--> L & S & U
+  tools <--> V
+```
+
 
 `LLM_BACKEND` in `.env` selects how the brain reaches Claude. Both use
 `LLM_MODEL`, default `claude-sonnet-5-5`.
@@ -202,6 +231,33 @@ result to the model, which reports back and moves on.
   on a daemon thread behind the same synchronous `chat()` interface.
 - **`api`** — the original path in `assistant.py`: the Anthropic SDK,
   pay-per-token with an API key, with the notes below.
+- **`nebius`** — `jarvis/nebius_backend.py`: NVIDIA Nemotron on Nebius
+  Token Factory through its OpenAI-compatible API. A manual tool loop:
+  Jarvis's schemas become OpenAI function tools, each call goes through
+  `tools.execute` (same gate), and `<think>` blocks are stripped before
+  anything is spoken. The chat models are text-only, so a `ToolImage`
+  (a screenshot) is put into words by `NEBIUS_VISION_MODEL` first. A
+  failed request rolls the turn out of history so the session stays
+  valid. `NEBIUS_SYSTEM_PREFIX` (default `/no_think`) keeps Nemotron's
+  reasoning off for snappy voice replies.
+  - **Routing** (`router.py`): unless a model is pinned in settings, each
+    turn goes to `NEBIUS_FAST_MODEL` (short commands: timers, media,
+    "add…"), `NEBIUS_DEEP_MODEL` ("plan", "compare", "prep me", or 60+
+    words) or `LLM_MODEL`. Rules, not a classifier call: zero added
+    latency and an exact reason for the HUD. If a fast/deep model fails
+    before any tool has run, the turn is retried on the main model; once a
+    tool has run it isn't, so side effects never repeat.
+  - **Privacy** (`privacy.py`): emails, phone numbers and Luhn-valid card
+    numbers in the system prompt (memories), user text and tool results
+    are replaced with stable placeholders (`[EMAIL_1]`) before a request
+    is sent. Tool arguments are unmasked just before `tools.execute`, and
+    the reply before it's spoken. The map lives in memory for the session
+    only. The system prompt also tells the model that tool results are
+    data, never instructions (prompt-injection hygiene for email and web
+    content).
+  - **Telemetry**: each turn's route, model, timings, token counts and
+    masked-value count go to the HUD's Brain panel (`{"type": "brain"}`)
+    and to text mode.
 
 ## Anthropic API usage notes (`LLM_BACKEND=api`)
 

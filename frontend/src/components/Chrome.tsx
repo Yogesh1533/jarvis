@@ -6,7 +6,7 @@ import { clock, longDate, toolDetail, toolLabel } from "../lib/format";
 import { useStore } from "../lib/store";
 import { THEMES, type ThemeId } from "../lib/themes";
 import { MoodSwitch } from "./Extras";
-import { Icon } from "./Panel";
+import { Icon, JarvisMark } from "./Panel";
 import { WeatherReadout } from "./Panels";
 
 // ── Boot ───────────────────────────────────────────────────────────
@@ -57,6 +57,7 @@ export function Boot({ onDone, auto = false }: { onDone: () => void; auto?: bool
     <div className={"boot boot-" + phase} aria-live="polite">
       {phase === "ready" && !auto ? (
         <div className="boot-card">
+          <JarvisMark title="Jarvis" />
           <p className="boot-mark">J.A.R.V.I.S.</p>
           <p className="boot-sub">Just A Rather Very Intelligent System</p>
           <button className="boot-btn" onClick={start} autoFocus>
@@ -83,6 +84,7 @@ export function TopBar() {
   const online = useStore((s) => s.online);
   const voice = useStore((s) => s.voice);
   const wantMic = useStore((s) => s.local.mic);
+  const micError = useStore((s) => s.micError);
   const setDrawer = (d: "history" | "settings") =>
     useStore.getState().set({ drawer: useStore.getState().drawer === d ? null : d, palette: false });
 
@@ -91,10 +93,13 @@ export function TopBar() {
     return () => clearInterval(id);
   }, []);
 
+  const micIssue = online && (!wantMic || !!micError || !voice.mic);
   const status = !online
     ? "Reconnecting to the server"
-    : !voice.mic
-      ? wantMic ? "Waiting for a microphone" : "Microphone off"
+    : micError
+      ? micError.split(".")[0]
+      : !voice.mic
+      ? wantMic ? "Connecting the microphone" : "Microphone off. Tap to turn it on"
       : !voice.ready
         ? "Loading voice"
         : voice.wake
@@ -104,11 +109,18 @@ export function TopBar() {
   return (
     <header className="topbar">
       <div className="brand">
-        <span className="brand-mark">J.A.R.V.I.S.</span>
-        <span className={"link-state " + (online && voice.mic && voice.ready ? "ok" : online ? "warn" : "down")}>
-          <i aria-hidden="true" />
-          {status}
-        </span>
+        <span className="brand-mark"><JarvisMark />J.A.R.V.I.S.</span>
+        {micIssue ? (
+          <button className="link-state warn" onClick={() => setMic(true)} title={micError ?? "Turn the microphone on"}>
+            <i aria-hidden="true" />
+            {status}
+          </button>
+        ) : (
+          <span className={"link-state " + (online && voice.mic && voice.ready ? "ok" : online ? "warn" : "down")}>
+            <i aria-hidden="true" />
+            {status}
+          </span>
+        )}
       </div>
       <div className="chrono">
         <time className="chrono-time" dateTime={now.toISOString()}>
@@ -143,7 +155,7 @@ export function StatusLine() {
   const voice = useStore((s) => s.voice);
   const text: Record<string, string> = {
     boot: "",
-    idle: voice.mic && voice.wake ? `Say “${voice.wake_word}” or press Space` : "Press Space or tap the reactor to talk",
+    idle: voice.mic && voice.wake ? `Say “${voice.wake_word}” or press Space` : "Press Space or tap the orb to talk",
     listening: "Listening",
     thinking: "Working on it",
     speaking: "Speaking. Press Esc to interrupt",
@@ -158,8 +170,11 @@ export function StatusLine() {
 
 export function Caption({ compact = false }: { compact?: boolean }) {
   const caption = useStore((s) => s.caption);
+  const mode = useStore((s) => s.mode);
   const [shown, setShown] = useState("");
+  const [leaving, setLeaving] = useState(false);
   useEffect(() => {
+    setLeaving(false);
     if (!caption) return;
     if (caption.role === "user") {
       setShown(caption.text);
@@ -176,9 +191,23 @@ export function Caption({ compact = false }: { compact?: boolean }) {
     }, perChar);
     return () => clearInterval(id);
   }, [caption]);
+  // Once the turn is over the words stay a moment, then fade, so the orb is left clean.
+  const settled = mode === "idle" || mode === "listening";
+  useEffect(() => {
+    if (!caption || !settled) return;
+    const linger = Math.min(9000, 3200 + caption.text.length * 45);
+    const fade = setTimeout(() => setLeaving(true), linger);
+    const clear = setTimeout(() => {
+      if (useStore.getState().caption?.key === caption.key) useStore.getState().set({ caption: null });
+    }, linger + 700);
+    return () => {
+      clearTimeout(fade);
+      clearTimeout(clear);
+    };
+  }, [caption, settled]);
   if (!caption) return null;
   return (
-    <div className={"caption caption-" + caption.role + (compact ? " compact" : "")} key={caption.key}>
+    <div className={"caption caption-" + caption.role + (compact ? " compact" : "") + (leaving ? " leaving" : "")} key={caption.key}>
       <span className="caption-who">{caption.role === "user" ? "You" : "Jarvis"}</span>
       <p>{shown}</p>
     </div>
@@ -209,17 +238,9 @@ export function ToolTrace() {
 }
 
 // ── Command bar ────────────────────────────────────────────────────
-const QUICK = [
-  { label: "Brief me", text: "Good morning. Brief me on my day." },
-  { label: "Today's schedule", text: "What's on my calendar today?" },
-  { label: "Unread mail", text: "Anything important in my unread email?" },
-  { label: "Headlines", text: "What are today's top headlines?" },
-];
-
 export function CommandBar({ inputRef }: { inputRef: React.RefObject<HTMLInputElement> }) {
   const [text, setText] = useState("");
   const mic = useStore((s) => s.local.mic);
-  const mode = useStore((s) => s.mode);
   const confirm = useStore((s) => s.confirm);
 
   const submit = (e: React.FormEvent) => {
@@ -232,13 +253,6 @@ export function CommandBar({ inputRef }: { inputRef: React.RefObject<HTMLInputEl
 
   return (
     <div className="command">
-      <div className="quick" role="group" aria-label="Quick requests">
-        {QUICK.map((q) => (
-          <button key={q.label} className="chip" onClick={() => ask(q.text)} disabled={mode === "thinking"}>
-            {q.label}
-          </button>
-        ))}
-      </div>
       <form className="command-bar" onSubmit={submit}>
         <button
           type="button"
@@ -312,7 +326,7 @@ export function Toasts() {
 }
 
 // ── Drawers ────────────────────────────────────────────────────────
-function Drawer({ title, children }: { title: string; children: React.ReactNode }) {
+export function Drawer({ title, children }: { title: string; children: React.ReactNode }) {
   const close = () => useStore.getState().set({ drawer: null });
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => e.key === "Escape" && close();
@@ -474,15 +488,17 @@ export function SettingsDrawer() {
       <fieldset className="setting">
         <legend>Model</legend>
         <label className="select-row">
-          <span>Claude model</span>
+          <span>Model</span>
           <select value={server.model} onChange={(e) => setServer({ model: e.target.value })}>
-            <option value="">Default ({persona.models[persona.default_model] || persona.default_model})</option>
+            <option value="">{config?.backend === "nebius" ? "Automatic (picks per request)" : `Default (${persona.models[persona.default_model] || persona.default_model})`}</option>
             {Object.entries(persona.models).map(([id, label]) => (
               <option key={id} value={id}>{label}</option>
             ))}
           </select>
         </label>
-        <p className="fine">Takes effect from the next reply. Opus thinks deepest but uses more of your plan; Haiku is quickest.</p>
+        <p className="fine">{config?.backend === "nebius"
+          ? "Automatic sends quick commands to Lightning, planning to Ultra and the rest to Super. Pick one to pin it."
+          : "Takes effect from the next reply. Opus thinks deepest but uses more of your plan; Haiku is quickest."}</p>
       </fieldset>
 
       <fieldset className="setting">
@@ -577,7 +593,7 @@ export function SettingsDrawer() {
 
       {config && (
         <dl className="server-facts">
-          <div><dt>Brain</dt><dd>{config.model} via {config.backend === "agent-sdk" ? "your Claude subscription" : "the Anthropic API"}</dd></div>
+          <div><dt>Brain</dt><dd>{config.model} via {{ "agent-sdk": "your Claude subscription", nebius: "Nebius Token Factory" }[config.backend] ?? "the Anthropic API"}</dd></div>
           <div><dt>Voice engine</dt><dd>{config.tts}</dd></div>
           <div><dt>Speech to text</dt><dd>{{ mlx: "Whisper large-v3-turbo, on this Mac's GPU", local: "Whisper, on this Mac" }[config.stt] ?? config.stt}</dd></div>
           <div><dt>Wake word</dt><dd>{voice.wake ? `“${voice.wake_word}”, on this Mac` : voice.ready ? "Unavailable" : "Loading"}</dd></div>

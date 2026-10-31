@@ -31,6 +31,7 @@ import queue
 import random
 import re
 import threading
+import time
 from collections import deque
 from contextlib import asynccontextmanager
 
@@ -86,7 +87,10 @@ class VoicePipeline:
         self.verify_at = SPEECH_MIN
         self.vad = None
         self.detector = None
+        self.spotter = None     # name spotting with Whisper when there's no model
         self.mic_on = False
+        self.frames_in = 0      # audio frames received from the browser, for /api/voice
+        self.last_frame = 0.0
         self.ready = False      # speech-to-text loaded
         self.wake_ok = False    # wake-word model loaded
         self.error = None
@@ -116,8 +120,16 @@ class VoicePipeline:
             self.detector = WakeWordDetector()
             self.wake_ok = True
         except Exception as exc:  # noqa: BLE001
-            self.error = (self.error + " " if self.error else "") + \
-                "Wake word unavailable: {}".format(exc)
+            if self.ready and config.WAKE_BY_NAME:
+                # No trained model: listen for the name with local Whisper.
+                from .audio.spotter import NameSpotter
+
+                self.spotter = NameSpotter()
+                self.wake_ok = True
+                print("[hud] no wake-word model ({}); listening for the name with Whisper".format(exc))
+            else:
+                self.error = (self.error + " " if self.error else "") + \
+                    "Wake word unavailable: {}".format(exc)
         threading.Thread(target=self._worker, daemon=True, name="hud-voice").start()
         if self.hub.state == "idle":
             self.sleep()
@@ -127,17 +139,29 @@ class VoicePipeline:
         return {
             "type": "voice", "ready": self.ready, "wake": self.wake_ok,
             "mic": self.mic_on, "error": self.error,
-            "wake_word": config.WAKE_WORD_MODEL.replace("_", " "),
+            "wake_word": config.WAKE_WORD_LABEL,
         }
 
     # -- control (any thread) -------------------------------------------
     def set_mic(self, on):
+        if bool(on) != self.mic_on:
+            print("[hud] microphone {}".format("on" if on else "off"))
         self.mic_on = bool(on)
         if not self.mic_on:
             self._set_mode("off")
         elif self.hub.state == "idle":
             self.sleep()
         self.hub.emit(self.status())
+
+    def debug(self):
+        """What the voice pipeline sees right now (GET /api/voice)."""
+        return {
+            "mic_on": self.mic_on, "mode": self.mode, "speech_to_text_ready": self.ready,
+            "wake_listening": self.wake_ok, "wake_by_name": self.spotter is not None,
+            "frames_received": self.frames_in,
+            "seconds_since_last_frame": round(time.time() - self.last_frame, 1) if self.last_frame else None,
+            "error": self.error,
+        }
 
     def sleep(self):
         """Back to waiting for the wake word (if we can hear it)."""
@@ -205,6 +229,8 @@ class VoicePipeline:
             self.probe_state = None
             self.onset.clear()
             self.recent.clear()
+            if self.spotter is not None:
+                self.spotter.reset()
             self.cooldown = 0
             self._drain()
 
@@ -218,6 +244,10 @@ class VoicePipeline:
 
     # -- audio path ------------------------------------------------------
     def feed(self, data):
+        if self.frames_in == 0:
+            print("[hud] audio is arriving from the browser")
+        self.frames_in += 1
+        self.last_frame = time.time()
         if self.mode == "off":
             return
         try:
@@ -255,6 +285,10 @@ class VoicePipeline:
                 self.detector.reset()
                 self.hub.on_wake()
                 return True
+        elif mode == "sleep" and self.spotter is not None and self.vad is not None:
+            burst = self.spotter.feed(chunk, self.vad.prob(chunk))
+            if burst is not None:
+                return self._spot(burst)
         elif mode == "watch" and self.vad is not None:
             return self._watch(chunk)
         elif mode == "record" and self.turn is not None:
@@ -274,6 +308,31 @@ class VoicePipeline:
                 self._finish(turn, self.purpose)
                 return True
         return False
+
+    def _spot(self, burst):
+        """A burst of speech while asleep: wake if it starts with the name.
+        "Hey Jarvis, what's the time?" in one breath goes straight through."""
+        from .audio.spotter import match
+
+        started = time.time()
+        try:
+            text = stt.transcribe(burst)
+        except Exception as exc:  # noqa: BLE001 — idle noise shouldn't raise notices
+            print("[hud] name check failed: {}".format(exc))
+            return False
+        heard, rest = match(text)
+        print("[hud] heard {!r} ({:.1f}s of audio, {:.1f}s to transcribe) -> {}".format(
+            text.strip()[:80], len(burst) / 16000, time.time() - started, "WAKE" if heard else "no name"))
+        if not heard or self.mode != "sleep":
+            return False
+        if len(rest.split()) >= 2:
+            self.pause()
+            self.hub.emit({"type": "wake"})
+            self.hub.set_state("thinking")
+            self.hub.on_utterance(rest, "confirm" if self.hub.confirm else "chat")
+        else:
+            self.hub.on_wake()
+        return True
 
     def _finish(self, turn, purpose):
         text, audio = turn.final_text(), turn.audio()
@@ -522,6 +581,8 @@ class Hub:
                 "stt": stt.provider(),
                 "google": config.GOOGLE_TOKEN_PATH.exists(),
                 "tools": len(tools.TOOL_SCHEMAS),
+                "name": config.USER_NAME,
+                "tavily": bool(config.TAVILY_API_KEY),
             },
         }
 
@@ -659,6 +720,9 @@ class Hub:
                     "(I added this while you were answering; your previous answer was "
                     "shown on screen but not read out.) " + extra
                 )
+            brain = self.assistant.brain()
+            if brain:
+                self.emit({"type": "brain", **brain})
         except Exception as exc:  # noqa: BLE001 — config/API errors go to the HUD
             reply = "Something went wrong: {}".format(exc)
             error = True
@@ -683,7 +747,7 @@ class Hub:
         self.emit({"type": "confirm", "prompt": prompt})
         headline = prompt.split("\n")[0]
         self.say(
-            headline + " Say yes to confirm, or anything else to cancel.",
+            headline + " Say yes to confirm.",
             kind="say", then="confirm", speak=settings.get()["speak"] or self.turn_source == "voice",
         )
         event.wait(timeout=120)
@@ -1022,6 +1086,18 @@ def api_system():
     from .tools import system
 
     return _safe(system.data)
+
+
+@app.get("/api/voice")
+def api_voice():
+    return {"data": hub.voice.debug()}
+
+
+@app.get("/api/skills")
+def api_skills():
+    from .tools import skills
+
+    return _safe(skills.data)
 
 
 @app.get("/api/tasks")

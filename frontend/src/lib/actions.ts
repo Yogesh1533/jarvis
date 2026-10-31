@@ -61,10 +61,18 @@ export function setMic(on: boolean): Promise<void> {
   return micBusy;
 }
 
+const MIC_PROBLEMS: Record<string, string> = {
+  NotAllowedError: "Microphone blocked. Allow it for this page (the lock icon by the address bar, or System Settings > Privacy & Security > Microphone), then tap the status to retry.",
+  SecurityError: "Microphone blocked. Allow it for this page (the lock icon by the address bar), then tap the status to retry.",
+  NotFoundError: "No microphone found. Plug one in or pick another in Settings, and I will start listening when one appears.",
+  NotReadableError: "Another app is holding the microphone. Close it, then tap the status to retry.",
+};
+
 async function applyMic(on: boolean) {
   const store = useStore.getState();
   if (!on) {
     audio.stopMic();
+    store.set({ micError: null });
     store.setLocal({ mic: false });
     link.send({ type: "mic", on: false });
     return;
@@ -73,17 +81,17 @@ async function applyMic(on: boolean) {
     await audio.init();
     await audio.startMic((buf) => link.sendAudio(buf), store.local.micDevice, () => restartMic());
   } catch (e) {
-    const name = (e as Error).name;
+    const err = e as Error;
     link.send({ type: "mic", on: false });
-    if (name === "NotAllowedError" || name === "SecurityError") {
-      store.toast("error", "Microphone blocked. Allow mic access for Jarvis, then turn it on again.");
-      store.setLocal({ mic: false });
-    } else {
-      // No mic plugged in right now: stay switched on and pick one up when it appears.
-      store.toast("notice", "No microphone found. I'll start listening when one is connected.");
-    }
+    const why = MIC_PROBLEMS[err.name] ?? `Could not start the microphone (${err.name}: ${err.message}).`;
+    store.set({ micError: why });
+    store.toast("error", why);
+    // The person asked for the mic on: keep that, so the status shows the problem
+    // (and a device change retries) instead of claiming the mic is off.
+    store.setLocal({ mic: true });
     return;
   }
+  store.set({ micError: null });
   store.setLocal({ mic: true });
   link.send({ type: "mic", on: true });
 }
@@ -119,6 +127,9 @@ export function runHudAction(action: string) {
   switch (action) {
     case "open_history":
       s.set({ drawer: "history", palette: false });
+      break;
+    case "open_skills":
+      s.set({ drawer: "skills", palette: false });
       break;
     case "open_settings":
       s.set({ drawer: "settings", palette: false });

@@ -4,10 +4,21 @@ import shutil
 import subprocess
 import tempfile
 import threading
+import os
+import re
 import wave
 from pathlib import Path
 
 from .. import config
+
+# Optional respelling of the assistant's name before synthesis, for voices
+# that say it oddly. Empty (the default) leaves the text alone.
+_SAY = os.getenv("JARVIS_SAY", "").strip()
+_NAME = re.compile(r"\bjarvis\b", re.I)
+
+
+def pronounce(text):
+    return _NAME.sub(_SAY, text) if _SAY else text
 
 
 def speak(text):
@@ -22,6 +33,7 @@ def synthesize(text):
     """Text -> (audio bytes, mime type), without playing it. The HUD sends
     these bytes to the browser, which plays them and animates the reactor."""
     provider = config.TTS_PROVIDER
+    text = pronounce(text)
     if provider == "elevenlabs":
         return _elevenlabs(text), "audio/mpeg"
     if provider == "openai":

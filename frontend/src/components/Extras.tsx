@@ -201,8 +201,14 @@ function useCommands(): Command[] {
     Object.entries(persona.voices).forEach(([id, label]) =>
       list.push({ id: "voice-" + id, group: "Voice", label: `Voice: ${label}`, hint: id === persona.voice ? "speaking now" : undefined, run: () => setServer({ voice: id }) }),
     );
+    const routed = useStore.getState().config?.backend === "nebius";
+    list.push({
+      id: "model-default", group: "Model",
+      label: routed ? "Model: Automatic (Lightning, Super or Ultra per request)" : `Model: Default (${persona.models[persona.default_model] || persona.default_model})`,
+      hint: server.model ? undefined : "current", run: () => setServer({ model: "" }),
+    });
     Object.entries(persona.models).forEach(([id, label]) =>
-      list.push({ id: "model-" + id, group: "Model", label: `Model: ${label}`, hint: (server.model || persona.default_model) === id ? "current" : undefined, run: () => setServer({ model: id }) }),
+      list.push({ id: "model-" + id, group: "Model", label: `Model: ${label}`, hint: server.model === id ? "current" : undefined, run: () => setServer({ model: id }) }),
     );
     (["snappy", "balanced", "patient"] as const).forEach((p) =>
       list.push({ id: "pat-" + p, group: "Listening", label: `Patience: ${p[0].toUpperCase() + p.slice(1)}`, hint: p === server.patience ? "current" : undefined, run: () => setServer({ patience: p }) }),
@@ -234,6 +240,7 @@ function useCommands(): Command[] {
       { id: "fill", group: "Settings", label: "“One moment” fillers", hint: on(server.fillers), run: () => setServer({ fillers: !server.fillers }) },
       { id: "speak", group: "Settings", label: "Speak typed replies", hint: on(server.speak), run: () => setServer({ speak: !server.speak }) },
       { id: "auto", group: "Settings", label: "Pick mood automatically", hint: on(server.auto_mood), run: () => setServer({ auto_mood: !server.auto_mood }) },
+      { id: "skills", group: "Window", label: "Skills", run: () => runHudAction("open_skills") },
       { id: "hist", group: "Window", label: "Conversation history", run: () => runHudAction("open_history") },
       { id: "set", group: "Window", label: "Settings", run: () => runHudAction("open_settings") },
       { id: "cards", group: "Window", label: "Clear cards", run: () => runHudAction("clear_cards") },

@@ -152,7 +152,7 @@ export function TimersPanel() {
   };
 
   return (
-    <Panel title="Timers and reminders" meta={live.length + reminders.length || undefined}>
+    <Panel title="Timers and reminders" meta={live.length + reminders.length || undefined} fold="open">
       {live.length === 0 && reminders.length === 0 && !rems.loading && (
         <Empty>Nothing pending. Try “set a ten minute timer for tea”.</Empty>
       )}
@@ -210,7 +210,7 @@ export function MailPanel() {
   const res = usePanelData<Mail>("/api/mail", "mail", 3 * 60_000);
   const items = res.data?.items ?? [];
   return (
-    <Panel title="Inbox" meta={res.data ? `${res.data.count} unread` : undefined}>
+    <Panel title="Inbox" meta={res.data ? `${res.data.count} unread` : undefined} fold="open">
       <PanelStatus loading={res.loading} error={res.error} what="inbox" />
       {res.data && items.length === 0 && <Empty>Inbox zero. Nothing unread.</Empty>}
       <ul className="mail">
@@ -309,7 +309,7 @@ export function MediaPanel() {
   };
 
   return (
-    <Panel title="Now playing" meta={now?.app} className="media-panel">
+    <Panel title="Now playing" meta={now?.app} className="media-panel" fold="open">
       {res.loading && !res.data && <Empty>Checking what's playing…</Empty>}
       {res.data && !now && <Empty>Nothing playing. Start something in YouTube Music, or ask me to.</Empty>}
       {now && (
@@ -397,7 +397,7 @@ export function SystemPanel() {
   const res = usePanelData<Sys>("/api/system", "system", 3000);
   const d = res.data;
   return (
-    <Panel title="Diagnostics" meta={d?.host}>
+    <Panel title="Diagnostics" meta={d?.host} fold="closed">
       <PanelStatus loading={res.loading && !d} error={d ? undefined : res.error} what="system status" />
       {d && (
         <>
@@ -417,6 +417,53 @@ export function SystemPanel() {
           </dl>
         </>
       )}
+    </Panel>
+  );
+}
+
+// ── Brain (Nebius backend) ─────────────────────────────────────────
+const ROUTE_LABEL = { fast: "Fast", main: "Main", deep: "Deep", pinned: "Pinned" } as const;
+
+function shortModel(id: string) {
+  return id.split("/").pop()!.replace(/_/g, ".").replace(/-/g, " ");
+}
+
+export function BrainPanel() {
+  const backend = useStore((s) => s.config?.backend);
+  const turns = useStore((s) => s.brain);
+  if (backend !== "nebius") return null;
+  const last = turns[turns.length - 1];
+  const peak = Math.max(1, ...turns.map((t) => t.seconds));
+  return (
+    <Panel title="Brain" meta="NVIDIA Nemotron · Nebius">
+      {!last ? (
+        <Empty>Ask something to see which model answers.</Empty>
+      ) : (
+        <>
+          <p className="brain-route">
+            <span className={"route route-" + last.route}>{ROUTE_LABEL[last.route]}</span>
+            <span className="brain-model">{shortModel(last.model)}</span>
+          </p>
+          <p className="brain-reason">{last.reason}</p>
+          <div className="brain-bars" aria-label="Response time, last turns">
+            {turns.map((t, i) => (
+              <i
+                key={i}
+                className={"route-" + t.route}
+                style={{ height: `${Math.max(8, (t.seconds / peak) * 100)}%` }}
+                title={`${t.route}: ${t.seconds}s`}
+              />
+            ))}
+          </div>
+          <dl className="sys-facts">
+            <div><dt>Reply in</dt><dd>{last.seconds.toFixed(1)} s ({last.requests} call{last.requests === 1 ? "" : "s"})</dd></div>
+            <div><dt>Tokens</dt><dd>{last.prompt_tokens.toLocaleString()} in · {last.completion_tokens.toLocaleString()} out</dd></div>
+            {last.tools.length > 0 && <div><dt>Tools</dt><dd>{[...new Set(last.tools)].join(", ")}</dd></div>}
+            <div><dt>Masked</dt><dd>{last.masked ? `${last.masked} private value${last.masked === 1 ? "" : "s"}` : "nothing to mask"}</dd></div>
+          </dl>
+        </>
+      )}
+      <p className="brain-local">On this Mac only: wake word, speech to text, memory search</p>
     </Panel>
   );
 }
@@ -448,7 +495,7 @@ export function MemoryPanel() {
   };
 
   return (
-    <Panel title="What Jarvis knows" meta={res.data ? items.length : undefined}>
+    <Panel title="What Jarvis knows" meta={res.data ? items.length : undefined} fold="closed">
       <PanelStatus loading={res.loading} error={res.error} what="memories" />
       {res.data && items.length === 0 && (
         <Empty>Nothing yet. Tell Jarvis something worth keeping, like “remember my sister’s birthday is March 3rd”.</Empty>

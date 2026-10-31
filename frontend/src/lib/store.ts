@@ -3,7 +3,7 @@ import { desktop } from "./desktop";
 import type { ThemeId } from "./themes";
 
 export type Mode = "boot" | "idle" | "listening" | "thinking" | "speaking" | "confirm";
-export type Panel = "agenda" | "mail" | "tasks" | "reminders" | "timers" | "memory" | "system" | "media";
+export type Panel = "agenda" | "mail" | "tasks" | "reminders" | "timers" | "memory" | "system" | "media" | "skills";
 export type Layout = "full" | "orb";
 
 export interface LogEntry {
@@ -44,9 +44,25 @@ export interface ServerConfig {
   stt: string;
   google: boolean;
   tools: number;
+  name?: string;
+  tavily?: boolean;
 }
 
 /** Settings that live on the server, so voice commands and every window agree. */
+/** How the last turn was handled (Nebius backend only). */
+export interface Brain {
+  model: string;
+  route: "fast" | "main" | "deep" | "pinned";
+  reason: string;
+  seconds: number;
+  model_seconds: number;
+  requests: number;
+  tools: string[];
+  prompt_tokens: number;
+  completion_tokens: number;
+  masked: number;
+}
+
 export interface ServerSettings {
   theme: ThemeId;
   mood: string;
@@ -138,12 +154,15 @@ interface State {
   online: boolean;
   layout: Layout;
   voice: VoiceStatus;
+  /** Why this window cannot use its microphone right now, if it cannot. */
+  micError: string | null;
   config: ServerConfig | null;
   caption: { role: "user" | "jarvis"; text: string; key: number } | null;
   hearing: Hearing | null;
   media: NowPlaying | null | undefined; // undefined: no live updates yet
   log: LogEntry[];
   tools: ToolEvent[];
+  brain: Brain[]; // newest last
   confirm: string | null;
   toasts: Toast[];
   cards: HoloCard[];
@@ -151,7 +170,7 @@ interface State {
   server: ServerSettings;
   persona: Persona;
   refresh: Record<Panel, number>;
-  drawer: "history" | "settings" | null;
+  drawer: "history" | "settings" | "skills" | null;
   palette: boolean;
 
   setMode: (m: Mode) => void;
@@ -172,19 +191,21 @@ export const useStore = create<State>((set, get) => ({
   online: false,
   layout: desktop?.layout ?? (new URLSearchParams(location.search).get("mode") === "orb" ? "orb" : "full"),
   voice: { ready: false, wake: false, mic: false, error: null, wake_word: "hey jarvis" },
+  micError: null,
   config: null,
   caption: null,
   hearing: null,
   media: undefined,
   log: [],
   tools: [],
+  brain: [],
   confirm: null,
   toasts: [],
   cards: [],
   local: loadLocal(),
   server: SERVER_DEFAULTS,
   persona: { moods: {}, voices: {}, voice: "", models: {}, default_model: "" },
-  refresh: { agenda: 0, mail: 0, tasks: 0, reminders: 0, timers: 0, memory: 0, system: 0, media: 0 },
+  refresh: { agenda: 0, mail: 0, tasks: 0, reminders: 0, timers: 0, memory: 0, system: 0, media: 0, skills: 0 },
   drawer: null,
   palette: false,
 
@@ -214,7 +235,11 @@ export const useStore = create<State>((set, get) => ({
     setTimeout(() => get().dismiss(id), ttl);
   },
   dismiss: (id) => set({ toasts: get().toasts.filter((t) => t.id !== id) }),
-  addCard: (c) => set({ cards: [{ ...c, id: seq++ }, ...get().cards].slice(0, 3) }),
+  addCard: (c) => {
+    const id = seq++;
+    set({ cards: [{ ...c, id }, ...get().cards].slice(0, 3) });
+    setTimeout(() => get().dropCard(id), 150_000); // a card isn't a permanent fixture
+  },
   dropCard: (id) => set({ cards: get().cards.filter((c) => c.id !== id) }),
   setLocal: (s) => {
     const local = { ...get().local, ...s };

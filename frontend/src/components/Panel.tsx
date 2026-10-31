@@ -1,20 +1,49 @@
-import type { ReactNode } from "react";
+import { useState, type ReactNode } from "react";
 
+/** `fold` makes a panel collapsible; the choice is remembered per panel. */
 export function Panel(props: {
   title: string;
   meta?: ReactNode;
   actions?: ReactNode;
   children: ReactNode;
   className?: string;
+  fold?: "open" | "closed";
 }) {
+  const key = "jarvis.fold." + props.title;
+  const [open, setOpen] = useState(() => {
+    try {
+      const saved = localStorage.getItem(key);
+      if (saved) return saved === "1";
+    } catch {
+      /* storage blocked: use the default */
+    }
+    return props.fold !== "closed";
+  });
+  const toggle = () => {
+    setOpen(!open);
+    try {
+      localStorage.setItem(key, open ? "0" : "1");
+    } catch {
+      /* not remembered */
+    }
+  };
   return (
-    <section className={"panel " + (props.className ?? "")} aria-label={props.title}>
+    <section className={"panel " + (props.className ?? "") + (props.fold && !open ? " folded" : "")} aria-label={props.title}>
       <header className="panel-head">
-        <h2>{props.title}</h2>
+        {props.fold ? (
+          <h2>
+            <button className="fold-btn" onClick={toggle} aria-expanded={open}>
+              {props.title}
+              <svg className="chev" viewBox="0 0 24 24" aria-hidden="true"><path d="M7 10l5 5 5-5" /></svg>
+            </button>
+          </h2>
+        ) : (
+          <h2>{props.title}</h2>
+        )}
         {props.meta !== undefined && <span className="panel-meta">{props.meta}</span>}
         {props.actions && <div className="panel-actions">{props.actions}</div>}
       </header>
-      <div className="panel-body">{props.children}</div>
+      {(!props.fold || open) && <div className="panel-body">{props.children}</div>}
     </section>
   );
 }
@@ -38,7 +67,7 @@ export function PanelStatus({ loading, error, what }: { loading: boolean; error?
 
 export type IconName =
   | "close" | "check" | "plus" | "history" | "settings" | "expand" | "mic" | "mic-off" | "send"
-  | "command" | "play" | "pause" | "next" | "prev" | "orb" | "full" | "volume" | "external";
+  | "command" | "play" | "pause" | "next" | "prev" | "orb" | "full" | "volume" | "external" | "skills" | "search" | "calendar" | "tasks" | "sun";
 
 export function Icon({ name }: { name: IconName }) {
   const paths: Record<string, ReactNode> = {
@@ -59,11 +88,27 @@ export function Icon({ name }: { name: IconName }) {
     orb: <><circle cx="12" cy="12" r="4" /><circle cx="12" cy="12" r="8.5" strokeDasharray="3 3" /></>,
     full: <><rect x="3.5" y="5" width="17" height="14" rx="2" /><path d="M3.5 9h17" /></>,
     volume: <path d="M4 9.5h3.5L12 6v12l-4.5-3.5H4v-5zM15.5 9a4 4 0 0 1 0 6M18 6.5a7.5 7.5 0 0 1 0 11" />,
+    skills: <><path d="M12 3l1.9 5.1L19 10l-5.1 1.9L12 17l-1.9-5.1L5 10l5.1-1.9L12 3z" /><path d="M18.5 16l.8 2.2 2.2.8-2.2.8-.8 2.2-.8-2.2-2.2-.8 2.2-.8.8-2.2z" /></>,
+    search: <><circle cx="11" cy="11" r="6.5" /><path d="M20 20l-4.2-4.2" /></>,
+    calendar: <><rect x="4" y="5.5" width="16" height="14.5" rx="2" /><path d="M4 10h16M8.5 3.5v4M15.5 3.5v4" /></>,
+    tasks: <><rect x="4.5" y="4.5" width="15" height="15" rx="3" /><path d="M8.5 12.5l2.5 2.5 4.5-5" /></>,
+    sun: <><circle cx="12" cy="12" r="4" /><path d="M12 2.5v2.5M12 19v2.5M2.5 12H5M19 12h2.5M5.3 5.3l1.8 1.8M16.9 16.9l1.8 1.8M5.3 18.7l1.8-1.8M16.9 7.1l1.8-1.8" /></>,
     external: <path d="M14 4h6v6M20 4l-9 9M18 14v5a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V7a1 1 0 0 1 1-1h5" />,
   };
   return (
     <svg className="icon" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round">
       {paths[name]}
+    </svg>
+  );
+}
+
+/** Jarvis's mark: a small arc reactor. */
+export function JarvisMark({ title }: { title?: string }) {
+  return (
+    <svg className="jarvis-mark" viewBox="0 0 64 64" role={title ? "img" : undefined} aria-hidden={title ? undefined : true} aria-label={title}>
+      <circle cx="32" cy="32" r="20" fill="none" stroke="var(--holo)" strokeWidth="2.5" strokeDasharray="22 6" />
+      <circle cx="32" cy="32" r="12" fill="none" stroke="var(--holo)" strokeOpacity=".55" strokeWidth="1.5" />
+      <circle cx="32" cy="32" r="6" fill="var(--ice)" />
     </svg>
   );
 }

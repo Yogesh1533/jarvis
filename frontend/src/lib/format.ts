@@ -1,3 +1,5 @@
+import { useStore } from "./store";
+
 export function clock(d: Date) {
   return d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", hour12: false });
 }
@@ -83,7 +85,16 @@ const TOOL_LABELS: Record<string, string> = {
   files_open: "Opening a file",
 };
 
+// When a Tavily key is set, web tools run on Tavily: say so in the trace.
+const TAVILY_LABELS: Record<string, string> = {
+  web_search: "Searching the web with Tavily",
+  news_headlines: "Reading the news with Tavily",
+  web_read_page: "Reading a page with Tavily",
+  meeting_prep: "Preparing your meeting (calendar, email, Tavily)",
+};
+
 export function toolLabel(name: string) {
+  if (useStore.getState().config?.tavily && TAVILY_LABELS[name]) return TAVILY_LABELS[name];
   return TOOL_LABELS[name] ?? name.replace(/_/g, " ");
 }
 

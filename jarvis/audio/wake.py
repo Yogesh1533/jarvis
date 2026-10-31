@@ -1,5 +1,7 @@
 """Wake-word detection with openWakeWord — fully local, mic audio never
 leaves the machine."""
+from pathlib import Path
+
 import numpy as np
 
 from .. import config
@@ -12,7 +14,13 @@ class WakeWordDetector:
         import openwakeword
         from openwakeword.model import Model
 
-        # Fetches the pre-trained models (incl. hey_jarvis) on first run.
+        model = config.WAKE_WORD_MODEL
+        if model.endswith(".onnx") and not Path(model).exists():
+            raise FileNotFoundError(
+                "no wake-word model at {} (train one: docs/wake-word.md); "
+                "press Space or tap the orb to talk".format(model)
+            )
+        # Fetches openWakeWord's shared feature models on first run.
         openwakeword.utils.download_models()
         self.model = Model(
             wakeword_models=[config.WAKE_WORD_MODEL],
