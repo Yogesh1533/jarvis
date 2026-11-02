@@ -42,7 +42,7 @@ export function ModelSwitch() {
     const list = Object.entries(models)
       .map(([id, label]) => ({ id, label, short: shortLabel(label) }))
       .sort((a, b) => (RANK[a.short] ?? 9) - (RANK[b.short] ?? 9));
-    return [{ id: "", label: backend === "nebius" ? "Automatic: picks a model per request" : "Default model", short: "Auto" }, ...list];
+    return [{ id: "", label: backend === "nebius" ? "Automatic: picks a model per request" : "Default model", short: backend === "nebius" ? "Auto" : "Default" }, ...list];
   }, [models, backend]);
   if (Object.keys(models).length < 2) return null;
   const answered = backend === "nebius" && !model && last ? shortLabel(models[last.model] ?? last.model) : "";
