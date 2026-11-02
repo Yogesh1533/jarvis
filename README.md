@@ -66,10 +66,6 @@ model"). Design details are in [ARCHITECTURE.md](ARCHITECTURE.md#three-llm-backe
   `scripts/run_demo.sh` launches the app on that profile, so recordings
   never show your real inbox.
 
-Sister project: [Saathi](https://github.com/Yogesh1533/saathi), the
-Nemotron-first build of this assistant made for the Nebius x NVIDIA Global
-AI Hackathon.
-
 Built by Yogesh Dhakal.
 
 ---
@@ -298,7 +294,12 @@ file. Browse other voices at <https://rhasspy.github.io/piper-samples/>.
 **ElevenLabs (best quality).** Create a key at <https://elevenlabs.io>
 (Profile → API keys), then in `.env` set `TTS_PROVIDER=elevenlabs` and
 `ELEVENLABS_API_KEY=...`. Pick a voice ID from their Voice Library if you
-don't want the default.
+don't want the default. `ELEVENLABS_MODEL` picks the model (default
+`eleven_flash_v2_5`, the fastest). Each mood sets the voice's pace,
+stability and style, and neighbouring sentences are sent as context so a
+reply keeps one tone. To fix how a word is said, list respellings in
+`data/pronunciations.txt` (`Jarvis = JAR-vis`) and run
+`python -m jarvis eleven-pronunciations`. Spoken replies leave the Mac.
 
 **OpenAI.** Create a key at <https://platform.openai.com/api-keys>, then set
 `TTS_PROVIDER=openai` and `OPENAI_API_KEY=...`.
@@ -310,7 +311,9 @@ wrong versus 27% for the old `base.en` default, in about 0.4 s. Other Macs
 use `faster-whisper` on the CPU. Put names Jarvis should expect (contacts,
 artists, places) in `STT_VOCABULARY` in `.env`, comma-separated. For the
 OpenAI Whisper API instead, set `STT_PROVIDER=openai` (uses the same
-`OPENAI_API_KEY`).
+`OPENAI_API_KEY`), or `STT_PROVIDER=elevenlabs` for ElevenLabs Scribe. With
+either, only finished utterances go to the cloud; wake-word listening and the
+live captions stay on the local model.
 
 ## 7. Run it
 

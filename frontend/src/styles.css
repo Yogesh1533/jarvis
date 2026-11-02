@@ -495,7 +495,11 @@ li:hover .ghost-x, .ghost-x:focus-visible, .toast .ghost-x { opacity: 1; }
   font-size: 13px;
   color: var(--ice-dim);
   border: 1px solid var(--line-soft);
-  border-radius: 999px;
+  border-radius: 2px;
+  font-family: var(--mono);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  clip-path: polygon(8px 0, 100% 0, 100% calc(100% - 8px), calc(100% - 8px) 100%, 0 100%, 0 8px);
   transition: color 0.2s, border-color 0.2s, background 0.2s;
 }
 .chip:hover:not(:disabled) { color: var(--ice); border-color: var(--holo); background: color-mix(in srgb, var(--holo) 10%, transparent); }
@@ -944,12 +948,24 @@ li:hover .ghost-x, .ghost-x:focus-visible, .toast .ghost-x { opacity: 1; }
 .center-bottom { justify-content: flex-end; }
 
 .home-brief { text-align: center; animation: rise 0.5s ease both; }
-.home-kicker { margin: 0; font-size: 15px; letter-spacing: 0.16em; color: var(--holo); }
+.home-kicker {
+  margin: 0 0 6px;
+  font-family: var(--mono);
+  font-size: 12px;
+  letter-spacing: 0.32em;
+  text-transform: uppercase;
+  color: var(--holo);
+  text-shadow: var(--glow);
+}
+.home-kicker::before, .home-kicker::after { content: ""; display: inline-block; width: 28px; height: 1px; margin: 0 12px; vertical-align: middle; background: linear-gradient(90deg, transparent, var(--holo)); }
+.home-kicker::after { transform: scaleX(-1); }
 .home-brief h1 {
   margin: 0;
-  font-size: clamp(26px, 3.1vw, 38px);
+  font-size: clamp(24px, 2.8vw, 34px);
   font-weight: 300;
   line-height: 1.15;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
   text-shadow: 0 0 28px color-mix(in srgb, var(--holo) 40%, transparent);
 }
 .home-brief ul { list-style: none; margin: 8px 0 0; padding: 0; display: flex; flex-wrap: wrap; justify-content: center; gap: 2px 18px; }
@@ -959,7 +975,9 @@ li:hover .ghost-x, .ghost-x:focus-visible, .toast .ghost-x { opacity: 1; }
   gap: 7px;
   min-height: 32px;
   padding: 0 4px;
-  font-size: 14px;
+  font-family: var(--mono);
+  font-size: 13px;
+  letter-spacing: 0.04em;
   color: var(--ice-dim);
   transition: color 0.2s;
 }
@@ -970,8 +988,8 @@ li:hover .ghost-x, .ghost-x:focus-visible, .toast .ghost-x { opacity: 1; }
   display: inline-flex;
   gap: 2px;
   padding: 3px;
-  border: 1px solid var(--line-soft);
-  border-radius: 999px;
+  border: 1px solid var(--line);
+  border-radius: 2px;
   background: color-mix(in srgb, var(--void) 55%, transparent);
   backdrop-filter: blur(8px);
   -webkit-backdrop-filter: blur(8px);
@@ -982,8 +1000,11 @@ li:hover .ghost-x, .ghost-x:focus-visible, .toast .ghost-x { opacity: 1; }
   gap: 6px;
   min-height: 30px;
   padding: 0 14px;
-  border-radius: 999px;
-  font-size: 13px;
+  border-radius: 1px;
+  font-family: var(--mono);
+  font-size: 12px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
   color: var(--ice-dim);
   transition: color 0.2s, background 0.2s;
 }
@@ -992,7 +1013,7 @@ li:hover .ghost-x, .ghost-x:focus-visible, .toast .ghost-x { opacity: 1; }
 .model-switch small { font-size: 11px; opacity: 0.8; }
 
 .center-bottom .quick { margin: 0; }
-.chip { min-height: 34px; padding: 0 14px; font-size: 13.5px; display: inline-flex; align-items: center; }
+.chip { min-height: 34px; padding: 0 16px; font-size: 12px; display: inline-flex; align-items: center; }
 
 .shelf { width: 100%; animation: rise 0.5s ease 0.08s both; }
 .shelf ul {
@@ -1017,8 +1038,9 @@ li:hover .ghost-x, .ghost-x:focus-visible, .toast .ghost-x { opacity: 1; }
   padding: 9px 12px;
   text-align: left;
   border: 1px solid var(--line);
-  border-radius: 14px;
+  border-radius: var(--radius);
   background: var(--glass);
+  clip-path: polygon(10px 0, 100% 0, 100% calc(100% - 10px), calc(100% - 10px) 100%, 0 100%, 0 10px);
   backdrop-filter: blur(8px);
   -webkit-backdrop-filter: blur(8px);
   scroll-snap-align: start;
@@ -1034,7 +1056,7 @@ li:hover .ghost-x, .ghost-x:focus-visible, .toast .ghost-x { opacity: 1; }
 @media (hover: none) { .skill-run { opacity: 1; } }
 .skill-text { display: flex; flex-direction: column; min-width: 0; flex: 1; }
 .skill-card .skill-name { padding-right: 18px; }
-.skill-name { font-size: 14.5px; font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.skill-name { font-size: 13.5px; font-weight: 500; letter-spacing: 0.08em; text-transform: uppercase; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .skill-desc {
   font-size: 12.5px;
   line-height: 1.3;

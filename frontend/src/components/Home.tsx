@@ -113,7 +113,7 @@ export function HomeBrief() {
 
   return (
     <section className="home-brief" aria-label="Today at a glance">
-      <p className="home-kicker" lang="ne">नमस्ते</p>
+      <p className="home-kicker">J.A.R.V.I.S. · Online</p>
       <h1>
         {greeting(now)}
         {name ? `, ${name}` : ""}
