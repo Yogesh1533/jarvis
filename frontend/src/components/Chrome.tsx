@@ -334,15 +334,18 @@ export function Drawer({ title, children }: { title: string; children: React.Rea
     return () => window.removeEventListener("keydown", onKey);
   }, []);
   return (
-    <aside className="drawer" aria-label={title}>
-      <header>
-        <h2>{title}</h2>
-        <button className="icon-btn" onClick={close} aria-label="Close">
-          <Icon name="close" />
-        </button>
-      </header>
-      <div className="drawer-body">{children}</div>
-    </aside>
+    <>
+      <div className="drawer-scrim" onClick={close} aria-hidden="true" />
+      <aside className="drawer" aria-label={title}>
+        <header>
+          <h2>{title}</h2>
+          <button className="icon-btn" onClick={close} aria-label="Close">
+            <Icon name="close" />
+          </button>
+        </header>
+        <div className="drawer-body">{children}</div>
+      </aside>
+    </>
   );
 }
 
@@ -360,7 +363,12 @@ export function HistoryDrawer() {
   useEffect(() => {
     api<HistoryRow[]>("/api/history?limit=200").then((r) => setRows(r.data ?? []));
   }, [logLen]);
-  useEffect(() => endRef.current?.scrollIntoView(), [rows]);
+  // Scroll the list itself. scrollIntoView would also scroll the page behind the
+// drawer while it slides in, which pushes the whole HUD out of view.
+useEffect(() => {
+    const body = endRef.current?.parentElement;
+    if (body) body.scrollTop = body.scrollHeight;
+  }, [rows]);
   const clear = async () => {
     if (!window.confirm("Clear the saved conversation log? Jarvis's memories are not affected.")) return;
     await api("/api/history", { method: "DELETE" });

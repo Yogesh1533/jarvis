@@ -55,6 +55,7 @@ body {
   -webkit-font-smoothing: antialiased;
   overflow: hidden;
 }
+html, body { overflow: clip; }   /* never scrollable, not even by scrollIntoView */
 button, input, textarea { font: inherit; color: inherit; }
 button { cursor: pointer; background: none; border: 0; padding: 0; }
 button:disabled { cursor: default; opacity: 0.4; }
@@ -568,19 +569,29 @@ li:hover .ghost-x, .ghost-x:focus-visible, .toast .ghost-x { opacity: 1; }
 .toast-error { border-left-color: var(--alert); }
 
 /* ── Drawers ──────────────────────────────────────────────────────── */
+/* The drawer sits under the top bar (its buttons stay reachable), is opaque so
+   the panels behind never show through, and a scrim dims and closes on click. */
+.drawer-scrim {
+  position: fixed;
+  inset: var(--topbar-h) 0 0 0;
+  z-index: 14;
+  background: color-mix(in srgb, var(--void) 55%, transparent);
+  backdrop-filter: blur(3px);
+  -webkit-backdrop-filter: blur(3px);
+  animation: fade-in 0.25s ease;
+}
 .drawer {
   position: fixed;
-  top: 0;
+  top: var(--topbar-h);
   right: 0;
   bottom: 0;
   z-index: 15;
   width: min(400px, 100%);
   display: flex;
   flex-direction: column;
-  background: rgba(3, 9, 15, 0.94);
+  background: color-mix(in srgb, var(--void) 94%, var(--deep));
   border-left: 1px solid var(--line);
-  backdrop-filter: blur(14px);
-  -webkit-backdrop-filter: blur(14px);
+  box-shadow: -24px 0 48px rgba(0, 0, 0, 0.55);
   animation: slide-in 0.3s ease;
 }
 .drawer header { display: flex; align-items: center; justify-content: space-between; padding: 16px 20px; border-bottom: 1px solid var(--line-soft); }
@@ -1146,6 +1157,7 @@ li:hover .ghost-x, .ghost-x:focus-visible, .toast .ghost-x { opacity: 1; }
 
 /* ── Motion ───────────────────────────────────────────────────────── */
 @keyframes rise { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
+@keyframes fade-in { from { opacity: 0; } }
 @keyframes slide-in { from { transform: translateX(100%); } to { transform: none; } }
 @keyframes blink { 50% { opacity: 0.25; } }
 @media (prefers-reduced-motion: reduce) {
