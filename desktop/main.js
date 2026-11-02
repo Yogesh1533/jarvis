@@ -143,13 +143,15 @@ function applyLayout(next, { notify = true, initial = false, auto = false } = {}
     win.setWindowButtonVisibility(false);
     win.setResizable(false);
     win.setAlwaysOnTop(true, "floating");
-    win.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
+    // skipTransformProcessType keeps the app a normal one: without it macOS
+    // turns it into an accessory app and the Dock icon disappears.
+    win.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true, skipTransformProcessType: true });
     win.setBounds(orbBounds(), true);
   } else {
     win.setWindowButtonVisibility(true);
     win.setResizable(true);
     win.setAlwaysOnTop(false);
-    win.setVisibleOnAllWorkspaces(false);
+    win.setVisibleOnAllWorkspaces(false, { skipTransformProcessType: true });
     win.setBounds(loadState().full || { width: 1440, height: 900 }, true);
     if (initial) win.center();
   }
@@ -262,6 +264,7 @@ if (!app.requestSingleInstanceLock()) {
   app.on("second-instance", summon);
 
   app.whenReady().then(async () => {
+    if (process.platform === "darwin") app.dock?.show();
     allowLocalMedia();
     // Not awaited: the window shouldn't wait on the permission prompt.
     // The HUD turns the mic on (and explains if it's blocked) by itself.
