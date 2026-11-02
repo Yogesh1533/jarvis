@@ -307,8 +307,8 @@ check("nebius: failed turn rolled back from history", nb.messages == before)
 check("nebius: markdown stripped for speech", nebius_backend.clean(
     "You've got **two** skills:\n• **end-of-day** wraps up\n- `bank-call` [docs](https://x.y)\n## Done")
     == "You've got two skills:\nend-of-day wraps up\nbank-call docs\nDone")
-check("nebius: emoji stripped, Devanagari kept", nebius_backend.clean("Hey there! 👋 Namaste 🙏🏽 साथी ✅ done")
-      == "Hey there! Namaste साथी done")
+check("nebius: emoji stripped, non-Latin kept", nebius_backend.clean("Hey there! 👋 Bonjour 🙏🏽 café 日本語 ✅ done")
+      == "Hey there! Bonjour café 日本語 done")
 check("nebius: maths and plain asterisks survive", nebius_backend.clean("3 * 4 is 12") == "3 * 4 is 12")
 
 print("== router ==")
@@ -524,14 +524,14 @@ fake_hub = SimpleNamespace(
 vp = web.VoicePipeline(fake_hub)
 vp.spotter, vp.mode = spotter.NameSpotter(), "sleep"
 _real_stt = web.stt.transcribe
-web.stt.transcribe = lambda a: "Hey Jarvis, set a timer for ten minutes."
+web.stt.transcribe = lambda a, local=False: "Hey Jarvis, set a timer for ten minutes."
 check("spot: name plus request goes straight to the brain",
       vp._spot(voice) and ("ask", "set a timer for ten minutes.", "chat") in events and vp.mode == "off")
 events.clear(); vp.mode = "sleep"
-web.stt.transcribe = lambda a: "Hey Jarvis."
+web.stt.transcribe = lambda a, local=False: "Hey Jarvis."
 check("spot: name alone starts listening", vp._spot(voice) and events == ["wake"])
 events.clear(); vp.mode = "sleep"
-web.stt.transcribe = lambda a: "and then we went to the shops"
+web.stt.transcribe = lambda a, local=False: "and then we went to the shops"
 check("spot: other speech is ignored", vp._spot(voice) is False and events == [])
 web.stt.transcribe = _real_stt
 
@@ -711,7 +711,7 @@ import threading  # noqa: E402
 from jarvis import web  # noqa: E402
 
 hub = web.Hub()
-hub._synth = lambda text: (None, None)   # no TTS in tests
+hub._synth = lambda text, *a: (None, None)   # no TTS in tests
 answers = []
 t = threading.Thread(target=lambda: answers.append(hub.web_confirm("Delete task 9?")))
 t.start()
@@ -752,7 +752,7 @@ sent, real_emit, real_synth = [], hub.emit, hub._synth
 hub.emit = sent.append
 
 
-def _cut_off_while_synthesizing(text):
+def _cut_off_while_synthesizing(text, *a):
     if "rest" in text:
         hub.playing_id = None   # the user talked over the first sentence
     return None, None
@@ -1184,6 +1184,30 @@ print("== pronunciation ==")
 from jarvis.audio import tts as tts_mod
 
 check("name left alone by default", tts_mod.pronounce("Hi, I'm Jarvis.") == "Hi, I'm Jarvis.")
+
+print("== elevenlabs ==")
+from unittest import mock as _mock
+from jarvis.audio import stt as stt_mod, eleven_dict as _ed
+_sent = {}
+class _Resp:
+    def raise_for_status(self): pass
+    def iter_content(self, chunk_size): yield b"ab"; yield b"cd"
+def _post(_self, url, **kw):
+    _sent.update(url=url, **kw)
+    return _Resp()
+_key = config.ELEVENLABS_API_KEY
+config.ELEVENLABS_API_KEY = "test"
+with _mock.patch("requests.Session.post", _post):
+    _audio = tts_mod._elevenlabs("Hello.", "Before.", "After.")
+config.ELEVENLABS_API_KEY = _key
+check("elevenlabs streams the clip and joins the chunks", _audio == b"abcd" and _sent["url"].endswith("/stream"))
+check("elevenlabs sends neighbours for continuity", _sent["json"]["previous_text"] == "Before." and _sent["json"]["next_text"] == "After.")
+check("elevenlabs voice settings follow the mood pace", 0.7 <= _sent["json"]["voice_settings"]["speed"] <= 1.2)
+check("every mood has a delivery", all("stability" in m["eleven"] for m in moods.MOODS.values()))
+_real_provider = stt_mod._provider
+stt_mod._provider = "elevenlabs"
+check("cloud stt keeps a local provider for partials", stt_mod.local_provider() in ("mlx", "local"))
+stt_mod._provider = _real_provider
 
 vp_dbg = web.VoicePipeline(SimpleNamespace(state="idle", emit=lambda m: None))
 vp_dbg.feed(np.zeros(1280, dtype=np.int16).tobytes())

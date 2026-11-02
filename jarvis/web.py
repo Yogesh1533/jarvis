@@ -316,7 +316,7 @@ class VoicePipeline:
 
         started = time.time()
         try:
-            text = stt.transcribe(burst)
+            text = stt.transcribe(burst, local=True)   # idle room audio never goes to a cloud API
         except Exception as exc:  # noqa: BLE001 — idle noise shouldn't raise notices
             print("[hud] name check failed: {}".format(exc))
             return False
@@ -451,9 +451,12 @@ class VoicePipeline:
             self.hub.emit({"type": "hearing", "verdict": "done"})
 
     # -- transcription ---------------------------------------------------
-    def _transcribe(self, audio):
+    def _transcribe(self, audio, final=True):
+        """`final=False` is for the live partials while someone is still
+        talking: they stay on the local model, so a cloud provider is only
+        asked once per utterance."""
         try:
-            return stt.transcribe(audio)
+            return stt.transcribe(audio, local=not final)
         except Exception as exc:  # noqa: BLE001
             self.hub.notice("I couldn't transcribe that: {}".format(exc))
             return ""
@@ -470,7 +473,7 @@ class VoicePipeline:
         audio = turn.audio()
 
         def job():
-            text = self._transcribe(audio)
+            text = self._transcribe(audio, final=False)
             if self.turn is turn:
                 if check:
                     kind = judge(text)
@@ -587,10 +590,10 @@ class Hub:
         }
 
     # -- speech out ------------------------------------------------------
-    def _synth(self, text):
+    def _synth(self, text, previous="", following=""):
         from .audio import tts
 
-        raw, mime = tts.synthesize(text)
+        raw, mime = tts.synthesize(text, previous, following)
         return base64.b64encode(raw).decode("ascii"), mime
 
     def say(self, text, kind, then, speak=True, extra=None):
@@ -616,7 +619,11 @@ class Hub:
                 return   # interrupted; don't bother synthesizing the rest
             audio = mime = None
             try:
-                audio, mime = self._synth(segment)
+                audio, mime = self._synth(
+                    segment,
+                    segments[seq - 1] if seq else "",
+                    segments[seq + 1] if seq + 1 < len(segments) else "",
+                )
             except Exception as exc:  # noqa: BLE001 — the client's own voice takes over
                 print("[hud] TTS failed, client voice will be used: {}".format(exc))
             if self.playing_id != uid:

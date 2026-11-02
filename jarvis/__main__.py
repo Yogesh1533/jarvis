@@ -13,6 +13,10 @@ def main():
     sub.add_parser("setup-google", help="one-time Google OAuth for Gmail + Calendar")
     models_parser = sub.add_parser("nebius-models", help="list Nebius Token Factory models")
     models_parser.add_argument("--probe", action="store_true", help="test tool calling on NVIDIA models")
+    sub.add_parser(
+        "eleven-pronunciations",
+        help="upload data/pronunciations.txt to ElevenLabs as a pronunciation dictionary",
+    )
     args = parser.parse_args()
 
     mode = args.mode or "voice"
@@ -32,6 +36,10 @@ def main():
         from . import nebius_backend
 
         nebius_backend.list_models(probe=args.probe)
+    elif mode == "eleven-pronunciations":
+        from .audio import eleven_dict
+
+        eleven_dict.run()
     else:
         from . import voice
 

@@ -151,7 +151,7 @@ privileges. The microphone is granted only to the local server's origin.
 | Skills | `tools/skills.py`, `skills/`, `data/skills/` | Workflows saved as Markdown steps (or `name/SKILL.md` folders), listed at the end of the system prompt, run through the normal tool loop and confirmation gate. |
 | Web search | `tools/websearch.py` | Tavily search, news and extract when `TAVILY_API_KEY` is set; DuckDuckGo and a readable-text fetch otherwise. |
 | Turn-taking | `audio/turns.py`, `audio/recorder.py` | Silero VAD + transcript-based end-of-turn (see above). |
-| STT | `audio/stt.py` | Whisper large-v3-turbo on the Apple GPU via `mlx-whisper` (default on Apple Silicon), `faster-whisper` on the CPU elsewhere, or the OpenAI Whisper API (`STT_PROVIDER=openai`). `STT_VOCABULARY` primes it with names to expect. |
+| STT | `audio/stt.py` | Whisper large-v3-turbo on the Apple GPU via `mlx-whisper` (default on Apple Silicon), `faster-whisper` on the CPU elsewhere, the OpenAI Whisper API (`STT_PROVIDER=openai`) or ElevenLabs Scribe (`STT_PROVIDER=elevenlabs`; finals only, partials and wake checks stay local). `STT_VOCABULARY` primes it with names to expect. |
 | Brain | `jarvis/assistant.py` | Multi-turn conversation, manual tool loop, prompt caching (`cache_control` on the system block), refusal handling with server-side model fallback. |
 | Tools | `jarvis/tools/*` | Schemas + dispatcher in `tools/__init__.py`; one module per capability. |
 | TTS | `audio/tts.py` | Piper in-process (voices cached, ~50 ms per sentence once loaded; speed/volume from the mood), ElevenLabs, or OpenAI — selected by `TTS_PROVIDER`. |

@@ -1,5 +1,6 @@
 """Text to speech with pluggable providers: piper (local), elevenlabs, openai."""
 import io
+import json
 import shutil
 import subprocess
 import tempfile
@@ -29,13 +30,15 @@ def speak(text):
     _play_bytes(audio, suffix=".wav" if mime == "audio/wav" else ".mp3")
 
 
-def synthesize(text):
+def synthesize(text, previous="", following=""):
     """Text -> (audio bytes, mime type), without playing it. The HUD sends
-    these bytes to the browser, which plays them and animates the reactor."""
+    these bytes to the browser, which plays them and animates the reactor.
+    `previous`/`following` are the neighbouring sentences of the same reply;
+    ElevenLabs uses them to keep tone and pacing continuous across sentences."""
     provider = config.TTS_PROVIDER
     text = pronounce(text)
     if provider == "elevenlabs":
-        return _elevenlabs(text), "audio/mpeg"
+        return _elevenlabs(text, previous, following), "audio/mpeg"
     if provider == "openai":
         return _openai(text), "audio/mpeg"
     return _piper(text), "audio/wav"
@@ -131,21 +134,65 @@ def _piper_cli(text, model):
         tmp.unlink(missing_ok=True)
 
 
-def _elevenlabs(text):
+_eleven = None
+_eleven_lock = threading.Lock()
+
+
+def _eleven_session():
+    """One keep-alive session, so each sentence skips the TLS handshake."""
+    global _eleven
     import requests
+
+    with _eleven_lock:
+        if _eleven is None:
+            _eleven = requests.Session()
+        return _eleven
+
+
+def _eleven_pronunciations():
+    """Locators for the dictionary made by `python -m jarvis eleven-pronunciations`."""
+    try:
+        data = json.loads(config.ELEVEN_DICT_FILE.read_text(encoding="utf-8"))
+        return [{"pronunciation_dictionary_id": data["id"], "version_id": data["version_id"]}]
+    except (OSError, ValueError, KeyError):
+        return []
+
+
+def _eleven_settings(mood):
+    """voice_settings from the active mood: its pace and delivery."""
+    settings = dict(mood.get("eleven") or {})
+    settings["speed"] = min(1.2, max(0.7, mood["speed"]))   # the API's allowed range
+    settings["use_speaker_boost"] = True
+    return settings
+
+
+def _elevenlabs(text, previous="", following=""):
+    from .. import moods
 
     if not config.ELEVENLABS_API_KEY:
         raise RuntimeError("TTS_PROVIDER=elevenlabs but ELEVENLABS_API_KEY is not set")
-    resp = requests.post(
-        "https://api.elevenlabs.io/v1/text-to-speech/{}".format(
-            config.ELEVENLABS_VOICE_ID
-        ),
+    body = {
+        "text": text,
+        "model_id": config.ELEVENLABS_MODEL,
+        "voice_settings": _eleven_settings(moods.current()),
+    }
+    if previous:
+        body["previous_text"] = previous
+    if following:
+        body["next_text"] = following
+    locators = _eleven_pronunciations()
+    if locators:
+        body["pronunciation_dictionary_locators"] = locators
+    resp = _eleven_session().post(
+        "https://api.elevenlabs.io/v1/text-to-speech/{}/stream".format(config.ELEVENLABS_VOICE_ID),
+        params={"output_format": "mp3_44100_64"},
         headers={"xi-api-key": config.ELEVENLABS_API_KEY},
-        json={"text": text, "model_id": "eleven_turbo_v2_5"},
+        json=body,
         timeout=60,
+        stream=True,
     )
     resp.raise_for_status()
-    return resp.content
+    return b"".join(resp.iter_content(chunk_size=8192))
 
 
 def _openai(text):

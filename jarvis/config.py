@@ -51,7 +51,7 @@ LLM_EFFORT = os.getenv("LLM_EFFORT", "low")
 LLM_MAX_TOKENS = int(_float("LLM_MAX_TOKENS", 4096))
 
 # Speech to text
-STT_PROVIDER = os.getenv("STT_PROVIDER", "auto")   # auto | mlx | local | openai
+STT_PROVIDER = os.getenv("STT_PROVIDER", "auto")   # auto | mlx | local | openai | elevenlabs
 WHISPER_MODEL = os.getenv("WHISPER_MODEL", "base.en")   # faster-whisper (local)
 MLX_WHISPER_MODEL = os.getenv("MLX_WHISPER_MODEL", "mlx-community/whisper-large-v3-turbo")
 STT_VOCABULARY = os.getenv("STT_VOCABULARY", "")   # names/words to expect, comma-separated
@@ -62,6 +62,11 @@ TTS_PROVIDER = os.getenv("TTS_PROVIDER", "piper")
 PIPER_VOICE = _path("PIPER_VOICE", "./data/voices/en_GB-alan-medium.onnx")
 ELEVENLABS_API_KEY = os.getenv("ELEVENLABS_API_KEY", "")
 ELEVENLABS_VOICE_ID = os.getenv("ELEVENLABS_VOICE_ID", "21m00Tcm4TlvDq8ikWAM")
+# eleven_flash_v2_5 is the fastest; eleven_turbo_v2_5 is a touch richer.
+ELEVEN_DICT_FILE = _path("ELEVEN_DICT_FILE", "./data/elevenlabs_pronunciations.json")
+ELEVENLABS_MODEL = os.getenv("ELEVENLABS_MODEL", "eleven_flash_v2_5")
+# Speech to text through ElevenLabs Scribe (STT_PROVIDER=elevenlabs).
+ELEVENLABS_STT_MODEL = os.getenv("ELEVENLABS_STT_MODEL", "scribe_v1")
 OPENAI_TTS_VOICE = os.getenv("OPENAI_TTS_VOICE", "alloy")
 
 # Wake word

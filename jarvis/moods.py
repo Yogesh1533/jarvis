@@ -1,4 +1,5 @@
-"""Voice moods: each pairs a Piper voice and speaking pace with a short
+"""Voice moods: each pairs a Piper voice and speaking pace (and, for
+ElevenLabs, a delivery: stability and style) with a short
 style note that steers how Jarvis words its replies.
 
 Switch from the HUD, or just ask ("Jarvis, calm mode"). The style note is
@@ -14,6 +15,7 @@ MOODS = {
         "voice": "en_GB-alan-medium",
         "speed": 1.0,
         "volume": 1.0,
+        "eleven": {"stability": 0.55, "similarity_boost": 0.8, "style": 0.0},
         "style": "",
         "fillers": ["One moment.", "Right away.", "Checking now."],
     },
@@ -23,6 +25,7 @@ MOODS = {
         "voice": "en_GB-northern_english_male-medium",
         "speed": 0.88,
         "volume": 0.85,
+        "eleven": {"stability": 0.75, "similarity_boost": 0.8, "style": 0.0},
         "style": "The user wants calm. Speak gently and unhurried, in short reassuring sentences. No jokes.",
         "fillers": ["Let me see.", "One moment.", "Just a second."],
     },
@@ -32,6 +35,7 @@ MOODS = {
         "voice": "en_GB-alan-medium",
         "speed": 1.12,
         "volume": 1.0,
+        "eleven": {"stability": 0.6, "similarity_boost": 0.8, "style": 0.0},
         "style": "The user is busy and focused. Be brisk: one sentence where possible, no pleasantries, no follow-up offers.",
         "fillers": ["On it.", "Checking."],
     },
@@ -41,6 +45,7 @@ MOODS = {
         "voice": "en_US-ryan-high",
         "speed": 1.05,
         "volume": 1.0,
+        "eleven": {"stability": 0.35, "similarity_boost": 0.75, "style": 0.35},
         "style": "The user is in good spirits. Be warm, energetic and a little playful while staying useful.",
         "fillers": ["On it!", "Let's see.", "Coming right up."],
     },
@@ -50,6 +55,7 @@ MOODS = {
         "voice": "en_GB-alba-medium",
         "speed": 0.92,
         "volume": 0.55,
+        "eleven": {"stability": 0.8, "similarity_boost": 0.8, "style": 0.0},
         "style": "It's late and quiet. Speak softly and use as few words as possible.",
         "fillers": ["One sec.", "Mm, checking."],
     },

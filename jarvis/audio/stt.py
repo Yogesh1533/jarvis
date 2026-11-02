@@ -7,6 +7,9 @@ Providers (STT_PROVIDER):
           10.5% word errors vs 27.2% for base.en, ~0.4 s per command.
   local   faster-whisper on the CPU (WHISPER_MODEL, default base.en)
   openai  the OpenAI Whisper API
+  elevenlabs  ElevenLabs Scribe (ELEVENLABS_STT_MODEL). Only finished
+          utterances are sent; wake-word listening and the live partials
+          stay on the local model so idle room audio never leaves the Mac.
 
 STT_VOCABULARY (comma-separated) lists names and words Whisper should
 expect: contacts, artists, places. They go in as the decoder's prompt
@@ -40,26 +43,42 @@ def provider():
     return _provider
 
 
+_CLOUD = ("openai", "elevenlabs")
+
+
+def local_provider():
+    """The on-device provider: the chosen one, or the best local one when a
+    cloud provider is chosen."""
+    choice = provider()
+    if choice not in _CLOUD:
+        return choice
+    apple_silicon = platform.system() == "Darwin" and platform.machine() == "arm64"
+    return "mlx" if apple_silicon and importlib.util.find_spec("mlx_whisper") else "local"
+
+
 def prompt():
     words = ["Jarvis"] + [w.strip() for w in config.STT_VOCABULARY.split(",") if w.strip()]
     return ", ".join(words) + "."
 
 
-def transcribe(audio_int16):
-    """int16 mono 16 kHz numpy array -> text."""
-    if provider() == "openai":
+def transcribe(audio_int16, local=False):
+    """int16 mono 16 kHz numpy array -> text. `local=True` never uses a
+    cloud provider (partials and idle wake-word checks)."""
+    choice = local_provider() if local else provider()
+    if choice == "openai":
         return _transcribe_openai(audio_int16)
+    if choice == "elevenlabs":
+        return _transcribe_elevenlabs(audio_int16)
     audio = audio_int16.astype(np.float32) / 32768.0
     with _lock:
-        if provider() == "mlx":
+        if choice == "mlx":
             return _transcribe_mlx(audio)
         return _transcribe_local(audio)
 
 
 def warm():
     """Load the model ahead of the first utterance (it takes seconds)."""
-    if provider() != "openai":
-        transcribe(np.zeros(8000, dtype=np.int16))
+    transcribe(np.zeros(8000, dtype=np.int16), local=True)
 
 
 def _transcribe_mlx(audio):
@@ -108,6 +127,26 @@ def _transcribe_openai(audio_int16):
         headers={"Authorization": "Bearer {}".format(config.OPENAI_API_KEY)},
         files={"file": ("speech.wav", _to_wav_bytes(audio_int16), "audio/wav")},
         data={"model": "whisper-1", "prompt": prompt()},
+        timeout=60,
+    )
+    resp.raise_for_status()
+    return resp.json().get("text", "").strip()
+
+
+def _transcribe_elevenlabs(audio_int16):
+    import requests
+
+    if not config.ELEVENLABS_API_KEY:
+        raise RuntimeError("STT_PROVIDER=elevenlabs but ELEVENLABS_API_KEY is not set")
+    data = {"model_id": config.ELEVENLABS_STT_MODEL, "language_code": "en", "tag_audio_events": "false"}
+    words = [w.strip() for w in config.STT_VOCABULARY.split(",") if w.strip()]
+    if "v2" in config.ELEVENLABS_STT_MODEL:   # key terms bias recognition toward your names (v2 models)
+        data["keyterms"] = ["Jarvis"] + words
+    resp = requests.post(
+        "https://api.elevenlabs.io/v1/speech-to-text",
+        headers={"xi-api-key": config.ELEVENLABS_API_KEY},
+        files={"file": ("speech.wav", _to_wav_bytes(audio_int16), "audio/wav")},
+        data=data,
         timeout=60,
     )
     resp.raise_for_status()
