@@ -31,7 +31,7 @@ export function AgendaPanel() {
   const events = (res.data ?? []).filter((e) => new Date(e.end) > now);
   let lastDay = "";
   return (
-    <Panel title="Agenda" meta={res.data ? `${events.length} upcoming` : undefined}>
+    <Panel title="Agenda" meta={res.data ? `${events.length} upcoming` : undefined} fold="open">
       <PanelStatus loading={res.loading} error={res.error} what="calendar" />
       {res.data && events.length === 0 && <Empty>Nothing scheduled for the next two days.</Empty>}
       <ol className="agenda">
@@ -91,7 +91,7 @@ export function TasksPanel() {
   };
 
   return (
-    <Panel title="Tasks" meta={res.data ? `${tasks.length} open` : undefined}>
+    <Panel title="Tasks" meta={res.data ? `${tasks.length} open` : undefined} fold="open">
       <PanelStatus loading={res.loading} error={res.error} what="tasks" />
       {res.data && tasks.length === 0 && <Empty>No open tasks. Add one below or just ask.</Empty>}
       <ul className="tasks">
