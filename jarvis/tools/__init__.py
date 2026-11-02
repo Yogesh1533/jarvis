@@ -753,8 +753,8 @@ TOOL_SCHEMAS = [
                 "setting": {
                     "type": "string",
                     "enum": [
-                        "patience", "barge_in", "fillers", "speak", "auto_mood", "theme",
-                        "wake", "conversation", "meeting_alerts", "briefing",
+                        "patience", "barge_in", "fillers", "speak", "auto_mood", "edge", "banter",
+                        "nudges", "theme", "wake", "conversation", "meeting_alerts", "briefing",
                     ],
                 },
                 "value": {"type": "string", "description": "New value; 'on'/'off' for switches"},
@@ -763,6 +763,21 @@ TOOL_SCHEMAS = [
         },
     },
     # ── HUD ────────────────────────────────────────────────────────
+    {
+        "name": "hud_react",
+        "description": (
+            "Make Jarvis's face react for a beat while it talks: laugh, groan, "
+            "smirk, wow, facepalm or wink. Only in the friendly moods, for the "
+            "odd moment that deserves it."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "kind": {"type": "string", "enum": ["laugh", "groan", "smirk", "wow", "facepalm", "wink"]},
+            },
+            "required": ["kind"],
+        },
+    },
     {
         "name": "hud_show_card",
         "description": (
@@ -898,6 +913,7 @@ def _handlers():
         "assistant_set_preference": persona.set_preference,
         "hud_show_card": hud.show_card,
         "hud_control": hud.control,
+        "hud_react": hud.react,
     }
 
 

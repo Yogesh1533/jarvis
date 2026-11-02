@@ -124,6 +124,10 @@ navigator.mediaDevices?.addEventListener("devicechange", () => {
 /** Interface actions Jarvis can trigger by voice (the hud_control tool). */
 export function runHudAction(action: string) {
   const s = useStore.getState();
+  if (action.startsWith("react:")) {
+    s.set({ reaction: { kind: action.slice(6), at: Date.now() } });
+    return;
+  }
   switch (action) {
     case "open_history":
       s.set({ drawer: "history", palette: false });

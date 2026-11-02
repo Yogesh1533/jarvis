@@ -59,6 +59,50 @@ MOODS = {
         "style": "It's late and quiet. Speak softly and use as few words as possible.",
         "fillers": ["One sec.", "Mm, checking."],
     },
+    "friend": {
+        "label": "Friend",
+        "blurb": "Your witty mate: casual, teasing, on your side",
+        "voice": "en_US-ryan-high",
+        "speed": 1.04,
+        "volume": 1.0,
+        "eleven": {"stability": 0.38, "similarity_boost": 0.78, "style": 0.4},
+        "style": "You're the user's close friend who happens to be brilliant at everything. Warm, quick, a bit cheeky.",
+        "fillers": ["On it.", "Hang on.", "Give me a sec.", "Yeah, one moment."],
+        "banter": True,
+    },
+    "sarcastic": {
+        "label": "Sarcastic",
+        "blurb": "Deadpan wit, helpful anyway",
+        "voice": "en_GB-alan-medium",
+        "speed": 0.98,
+        "volume": 1.0,
+        "eleven": {"stability": 0.5, "similarity_boost": 0.8, "style": 0.3},
+        "style": "Bone-dry, deadpan sarcasm, like a long-suffering friend who still does everything perfectly. Understate, never explain the joke.",
+        "fillers": ["Oh, sure.", "Right, because I've nothing else on.", "Fine, checking."],
+        "banter": True,
+    },
+    "roast": {
+        "label": "Roast",
+        "blurb": "Friendly roasting, you asked for it",
+        "voice": "en_US-ryan-high",
+        "speed": 1.08,
+        "volume": 1.0,
+        "eleven": {"stability": 0.3, "similarity_boost": 0.75, "style": 0.55},
+        "style": "Roast mode: tease the user about their own choices, habits and requests, then actually do the task well. Affectionate, never cruel.",
+        "fillers": ["Ugh, fine.", "Wow, okay.", "Doing your homework, then."],
+        "banter": True,
+    },
+    "hype": {
+        "label": "Hype",
+        "blurb": "Big energy, hype-man for everything",
+        "voice": "en_US-ryan-high",
+        "speed": 1.12,
+        "volume": 1.0,
+        "eleven": {"stability": 0.25, "similarity_boost": 0.72, "style": 0.7},
+        "style": "You're the user's hype-man. Huge energy, celebrate every win, short punchy lines, a little over the top on purpose.",
+        "fillers": ["Let's go!", "On it, legend!", "Say less!"],
+        "banter": True,
+    },
 }
 
 VOICE_LABELS = {
@@ -104,14 +148,55 @@ def current():
     return mood
 
 
+EDGE = {
+    "playful": (
+        "Edge: playful. Dry sarcasm and light teasing only. Never mean, no swearing."
+    ),
+    "spicy": (
+        "Edge: spicy. Sharper roasts and mild swearing (damn, hell, crap) are fine. "
+        "Never joke about appearance, family, health, money trouble or anything "
+        "genuinely sensitive."
+    ),
+}
+
+CASUAL = (
+    "Talk like a friend, not an assistant: one or two short sentences unless asked for more, contractions, "
+    "everyday words, react before you answer ('ha', 'ooh', 'oh no'). No "
+    "'certainly', 'I'd be happy to' or 'is there anything else'. Facts, times "
+    "and tool results must still be exactly right. Drop the jokes and be "
+    "straight and kind for bad news, health, money worries, errors you caused, "
+    "or if the user sounds stressed or low."
+)
+
+BANTER = (
+    "Banter: build a relationship over time. Use `recall` for things the user "
+    "told you before and call back to them. When the user shows a running joke, "
+    "habit or strong opinion, save it with memory_save (name it banter-<topic>). "
+    "Tease about those, sparingly, at most once per reply."
+)
+
+REACT = (
+    "You can use `hud_react` (laugh, groan, smirk, wow, facepalm, wink) to show a "
+    "quick facial reaction while you speak. Use it for the odd beat, not every reply."
+)
+
+
 def style_note():
     """Per-message steering text, or "" when there's nothing to add."""
     from . import settings
 
+    prefs = settings.get()
     parts = []
-    style = current()["style"]
+    mood = current()
+    style = mood["style"]
     if style:
         parts.append("Mood: " + style)
+    if mood.get("banter"):
+        parts.append(CASUAL)
+        parts.append(EDGE.get(prefs["edge"], EDGE["playful"]))
+        if prefs["banter"]:
+            parts.append(BANTER)
+        parts.append(REACT)
     if settings.get().get("auto_mood"):
         parts.append(
             "Auto mood is on: if the user's tone clearly suggests another mood "

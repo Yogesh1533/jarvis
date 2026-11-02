@@ -13,13 +13,16 @@ from . import config
 
 DEFAULTS = {
     "theme": "arc",          # HUD colour scheme
-    "mood": "classic",       # voice + speaking style (see moods.py)
+    "mood": "friend",        # voice + speaking style (see moods.py)
     "voice": "",             # optional Piper voice override; "" = mood's voice
     "patience": "balanced",  # how long Jarvis waits when you pause mid-thought
     "barge_in": True,        # talk over Jarvis to interrupt it
     "fillers": True,         # brief "one moment" while slow tools run
     "speak": True,           # speak typed replies too
     "auto_mood": False,      # let Jarvis pick a mood from your tone
+    "edge": "playful",       # how hard the friend moods tease: playful / spicy
+    "banter": True,          # callbacks to what it remembers about you
+    "nudges": True,          # speaks up on its own (late night, long sessions, welcome back)
     "wake": "normal",        # wake-word sensitivity: low / normal / high
     "conversation": "open",  # after replying, keep listening briefly or for a while
     "meeting_alerts": "5",   # minutes of warning before calendar events, or "off"
@@ -54,6 +57,7 @@ CHOICES = {
     "patience": ("snappy", "balanced", "patient"),
     "wake": ("low", "normal", "high"),
     "conversation": ("brief", "open"),
+    "edge": ("playful", "spicy"),
     "meeting_alerts": ("off", "5", "10", "15"),
 }
 

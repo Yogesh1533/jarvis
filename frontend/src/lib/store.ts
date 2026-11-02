@@ -77,6 +77,9 @@ export interface ServerSettings {
   fillers: boolean;
   speak: boolean;
   auto_mood: boolean;
+  edge: "playful" | "spicy";
+  banter: boolean;
+  nudges: boolean;
   model: string; // "" = the default from .env
 }
 
@@ -147,7 +150,7 @@ function loadLocal(): LocalSettings {
 
 const SERVER_DEFAULTS: ServerSettings = {
   theme: "arc", mood: "classic", voice: "", patience: "balanced",
-  barge_in: true, wake: "normal", conversation: "open", meeting_alerts: "5", briefing: "07:00", fillers: true, speak: true, auto_mood: false, model: "",
+  barge_in: true, wake: "normal", conversation: "open", meeting_alerts: "5", briefing: "07:00", fillers: true, speak: true, auto_mood: false, edge: "playful", banter: true, nudges: true, model: "",
 };
 
 let seq = 1;
@@ -162,6 +165,7 @@ interface State {
   config: ServerConfig | null;
   caption: { role: "user" | "jarvis"; text: string; key: number } | null;
   hearing: Hearing | null;
+  reaction: { kind: string; at: number } | null; // a quick facial reaction, from the hud_react tool
   media: NowPlaying | null | undefined; // undefined: no live updates yet
   log: LogEntry[];
   tools: ToolEvent[];
@@ -198,6 +202,7 @@ export const useStore = create<State>((set, get) => ({
   config: null,
   caption: null,
   hearing: null,
+  reaction: null,
   media: undefined,
   log: [],
   tools: [],

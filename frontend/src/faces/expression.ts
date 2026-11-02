@@ -20,7 +20,21 @@ const MOOD: Record<string, Partial<Target>> = {
   upbeat: { eye: 0.15, brow: 0.4, smile: 0.6 },
   night: { eye: -0.35, brow: -0.2, smile: 0.05 },
   hype: { eye: 0.3, brow: 0.9, smile: 0.95, hype: 1 },
+  friend: { eye: 0.05, brow: 0.15, smile: 0.3 },
+  sarcastic: { eye: -0.3, brow: -0.35, tilt: 0.3, smile: 0.15 },
+  roast: { eye: -0.15, brow: -0.2, tilt: 0.45, smile: 0.5 },
 };
+
+/** Quick reactions (the hud_react tool): peak offsets, eased in and out. */
+const REACT: Record<string, Partial<Target> & { wiggle?: number }> = {
+  laugh: { smile: 0.9, eye: -0.5, brow: 0.3, wiggle: 0.18 },
+  groan: { eye: -0.5, brow: -0.8, smile: -0.4, ly: -0.5 },
+  smirk: { smile: 0.5, tilt: 0.5, brow: -0.3, eye: -0.2 },
+  wow: { eye: 0.5, brow: 1, smile: 0.1, ly: 0.2 },
+  facepalm: { eye: -0.6, brow: -0.9, smile: -0.3, tilt: -0.6, ly: -0.8 },
+  wink: { smile: 0.6, tilt: 0.3, eye: -0.4 },
+};
+const REACT_SECS = 1.5;
 
 const KEYS = ["eye", "brow", "tilt", "smile", "lx", "ly", "hype"] as const;
 
@@ -31,6 +45,11 @@ export class Expression {
   private nextBlink = 2.5;
   private blinkT = -1;
   private lastMood = "";
+  private reacting: { kind: string; t: number } | null = null;
+
+  react(kind: string) {
+    if (REACT[kind]) this.reacting = { kind, t: 0 };
+  }
 
   update(dt: number, mode: Mode, mood: string, out: number, mic: number) {
     const v = this.v;
@@ -41,6 +60,19 @@ export class Expression {
     if (mode === "listening") {
       target.eye += mic * 0.25;
       target.brow += mic * 0.3;
+    }
+    if (this.reacting) {
+      const r = this.reacting;
+      r.t += dt;
+      const u = r.t / REACT_SECS;
+      if (u >= 1) this.reacting = null;
+      else {
+        const env = Math.sin(Math.min(1, u * 1.6) * Math.PI / 2) * (1 - Math.max(0, u - 0.6) / 0.4);
+        const o = REACT[r.kind];
+        for (const key of KEYS) target[key] += (o[key] ?? 0) * env;
+        if (o.wiggle) target.tilt += Math.sin(r.t * 18) * o.wiggle * env;
+        if (r.kind === "wink" && u > 0.15 && u < 0.35) target.eye -= 0.7;
+      }
     }
     const k = 1 - Math.exp(-dt * 7);
     for (const key of KEYS) v[key] += (target[key] - v[key]) * k;

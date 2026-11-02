@@ -41,3 +41,13 @@ def control(action, value=None):
     if action == "mute_mic":
         return "Microphone muted. Press Command-J or the mic button to wake me again."
     return "Done."
+
+
+REACTIONS = ("laugh", "groan", "smirk", "wow", "facepalm", "wink")
+
+
+def react(kind):
+    if kind not in REACTIONS:
+        raise ValueError("kind must be one of: {}".format(", ".join(REACTIONS)))
+    hud_bridge.send({"type": "hud", "action": "react:" + kind})
+    return "Reacted."

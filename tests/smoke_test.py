@@ -667,7 +667,7 @@ NO = lambda prompt: False  # noqa: E731 — none of these tools should ask
 
 changes = []
 settings.add_listener(lambda snap, ch: changes.append(ch))
-check("defaults load", settings.get()["mood"] == "classic")
+check("defaults load", settings.get()["mood"] == "friend")
 try:
     settings.update(patience="forever")
     check("invalid patience rejected", False)
@@ -701,6 +701,10 @@ urls = [i["url"] for i in sent_events[-1]["items"]]
 check("card links must be http(s)", urls == ["https://example.com", None])
 tools.execute("hud_control", {"action": "orb_mode"}, confirm=NO)
 check("hud_control reaches the HUD", sent_events[-1] == {"type": "hud", "action": "orb_mode"})
+tools.execute("hud_react", {"kind": "smirk"}, confirm=NO)
+check("hud_react reaches the HUD", sent_events[-1] == {"type": "hud", "action": "react:smirk"})
+_, _err = tools.execute("hud_react", {"kind": "explode"}, confirm=NO)
+check("hud_react rejects unknown kinds", bool(_err))
 tools.execute("hud_control", {"action": "set_theme", "value": "mark"}, confirm=NO)
 check("theme can be set by voice", settings.get()["theme"] == "mark")
 hud_bridge.attach(None)
@@ -1203,6 +1207,19 @@ config.ELEVENLABS_API_KEY = _key
 check("elevenlabs streams the clip and joins the chunks", _audio == b"abcd" and _sent["url"].endswith("/stream"))
 check("elevenlabs sends neighbours for continuity", _sent["json"]["previous_text"] == "Before." and _sent["json"]["next_text"] == "After.")
 check("elevenlabs voice settings follow the mood pace", 0.7 <= _sent["json"]["voice_settings"]["speed"] <= 1.2)
+from jarvis import proactive as _pro  # noqa: E402
+from datetime import datetime as _dt  # noqa: E402
+tools.execute("voice_set_mood", {"mood": "roast"}, confirm=NO)
+_note = stamp("hi")
+check("friend moods get casual speech rules", "contractions" in _note and "Edge: playful" in _note)
+tools.execute("assistant_set_preference", {"setting": "edge", "value": "spicy"}, confirm=NO)
+check("edge setting reaches the model", "Edge: spicy" in stamp("hi"))
+tools.execute("assistant_set_preference", {"setting": "edge", "value": "playful"}, confirm=NO)
+tools.execute("voice_set_mood", {"mood": "calm"}, confirm=NO)
+check("calm mood stays serious", "contractions" not in stamp("hi"))
+_st = {"last_seen": _dt(2026, 11, 3, 0, 59).timestamp(), "since": _dt(2026, 11, 3, 0, 0).timestamp(), "away_for": 0}
+check("late-night nudge fires after 00:30", _pro.nudge_due(_dt(2026, 11, 3, 1, 0), _st, 5) == "late")
+check("no nudge when you're away", _pro.nudge_due(_dt(2026, 11, 3, 1, 1), {}, 900) is None)
 check("every mood has a delivery", all("stability" in m["eleven"] for m in moods.MOODS.values()))
 _real_provider = stt_mod._provider
 stt_mod._provider = "elevenlabs"

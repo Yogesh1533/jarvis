@@ -407,6 +407,11 @@ const PATIENCE: { id: "snappy" | "balanced" | "patient"; label: string; note: st
   { id: "patient", label: "Patient", note: "Gives you time to think" },
 ];
 
+const EDGE: { id: "playful" | "spicy"; label: string; note: string }[] = [
+  { id: "playful", label: "Playful", note: "Dry sarcasm and light teasing, never mean" },
+  { id: "spicy", label: "Spicy", note: "Sharper roasts and mild swearing, still off-limits on anything sensitive" },
+];
+
 const WAKE: { id: "low" | "normal" | "high"; label: string; note: string }[] = [
   { id: "low", label: "Strict", note: "Fewer false starts; say it clearly" },
   { id: "normal", label: "Normal", note: "A good balance for most rooms" },
@@ -527,6 +532,21 @@ export function SettingsDrawer() {
         </label>
         <Toggle label="Speak typed replies out loud" on={server.speak} onChange={() => setServer({ speak: !server.speak })} />
         <Toggle label="Say “one moment” while working" on={server.fillers} onChange={() => setServer({ fillers: !server.fillers })} />
+      </fieldset>
+
+      <fieldset className="setting">
+        <legend>Personality</legend>
+        <span className="setting-label">Edge (Friend, Sarcastic, Roast and Hype moods)</span>
+        <div className="segmented" role="radiogroup" aria-label="How hard Jarvis teases">
+          {EDGE.map((e) => (
+            <button key={e.id} role="radio" aria-checked={server.edge === e.id} className={server.edge === e.id ? "active" : ""} onClick={() => setServer({ edge: e.id })}>
+              {e.label}
+            </button>
+          ))}
+        </div>
+        <p className="fine">{EDGE.find((e) => e.id === server.edge)?.note}.</p>
+        <Toggle label="Banter: call back to things it remembers" on={server.banter} onChange={() => setServer({ banter: !server.banter })} />
+        <Toggle label="Speak up on its own (late nights, long sessions, welcome back)" on={server.nudges} onChange={() => setServer({ nudges: !server.nudges })} />
       </fieldset>
 
       <fieldset className="setting">

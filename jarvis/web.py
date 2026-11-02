@@ -857,11 +857,12 @@ class Hub:
         """Nothing going on, and a window open to hear Jarvis."""
         return bool(self.clients) and self.state == "idle" and not self.turn_lock.locked()
 
-    def brief(self, prompt):
-        """Start a turn Jarvis begins itself (the morning briefing)."""
+    def brief(self, prompt, label="Your morning briefing"):
+        """Start a turn Jarvis begins itself (the morning briefing, nudges)."""
         if not self.free():
             return False
-        self.emit({"type": "notify", "kind": "briefing", "text": "Your morning briefing"})
+        if label:
+            self.emit({"type": "notify", "kind": "briefing", "text": label})
         self.submit(prompt, source="auto", speak=True)
         return True
 

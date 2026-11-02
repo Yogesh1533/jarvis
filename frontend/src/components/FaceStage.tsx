@@ -102,6 +102,7 @@ export function FaceStage({ onActivate }: { onActivate: () => void }) {
     void load(useStore.getState().local.face);
     const unsub = useStore.subscribe((s, prev) => {
       if (s.local.face !== prev.local.face) void load(s.local.face);
+      if (s.reaction && s.reaction !== prev.reaction) expr.react(s.reaction.kind);
     });
 
     const mouse = { x: 0, y: 0 };
