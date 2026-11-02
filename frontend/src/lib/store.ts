@@ -1,5 +1,6 @@
 import { create } from "zustand";
 import { desktop } from "./desktop";
+import type { FaceId } from "../faces/types";
 import type { ThemeId } from "./themes";
 
 export type Mode = "boot" | "idle" | "listening" | "thinking" | "speaking" | "confirm";
@@ -129,10 +130,11 @@ export interface LocalSettings {
   sounds: boolean;
   mic: boolean;
   micDevice: string; // "" = the system default
+  face: FaceId; // what fills the stage
 }
 
 const LOCAL_KEY = "jarvis.local";
-const LOCAL_DEFAULTS: LocalSettings = { sounds: true, mic: true, micDevice: "" };
+const LOCAL_DEFAULTS: LocalSettings = { sounds: true, mic: true, micDevice: "", face: "orb" };
 
 function loadLocal(): LocalSettings {
   try {

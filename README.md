@@ -192,6 +192,12 @@ use the mic and speakers) and allow microphone access. From then on:
 - Press **Space** / tap the reactor to talk without the wake word,
   **Esc** to interrupt, **/** to type, **⌘K** for the command palette
   (moods, voices, themes, settings, or type anything to ask).
+- **Faces**: Settings → Face swaps the orb for a 3D head (Hologram, Screen
+  droid, Android, Visor, Orb face, Sentinel). The mouth follows the real
+  voice output, the eyes follow the cursor. The Hologram is built from a
+  local face scan: put a photo in `data/face/` and run
+  `scripts/face_scan.py` to write `data/face/hologram.json`. Both are
+  gitignored and served only by `GET /api/face/hologram`; never commit them.
 - Jarvis can put **cards** on screen (lists, numbers, headlines) and
   control the interface by voice: "show my history", "switch to orb mode",
   "clear the cards", "mute the mic".

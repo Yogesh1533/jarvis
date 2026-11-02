@@ -5,6 +5,7 @@ import { audio } from "../lib/audio";
 import { clock, longDate, toolDetail, toolLabel } from "../lib/format";
 import { useStore } from "../lib/store";
 import { THEMES, type ThemeId } from "../lib/themes";
+import { FACES, hologramAvailable } from "../faces";
 import { MoodSwitch } from "./Extras";
 import { Icon, JarvisMark } from "./Panel";
 import { WeatherReadout } from "./Panels";
@@ -467,6 +468,10 @@ export function SettingsDrawer() {
   const persona = useStore((s) => s.persona);
   const config = useStore((s) => s.config);
   const voice = useStore((s) => s.voice);
+  const [hasScan, setHasScan] = useState<boolean | null>(null);
+  useEffect(() => {
+    void hologramAvailable().then(setHasScan);
+  }, []);
 
   const toggleSounds = () => {
     useStore.getState().setLocal({ sounds: !local.sounds });
@@ -578,6 +583,29 @@ export function SettingsDrawer() {
           {config && !config.google ? "Meeting alerts need Google connected. " : ""}
           The briefing plays the first time you're at your Mac after that time, before noon: weather, your first meetings and important email.
         </p>
+      </fieldset>
+
+      <fieldset className="setting">
+        <legend>Face</legend>
+        <div className="face-list" role="radiogroup" aria-label="What fills the centre of the screen">
+          {FACES.map((f) => {
+            const missing = f.id === "hologram" && hasScan === false;
+            return (
+              <button
+                key={f.id}
+                role="radio"
+                aria-checked={local.face === f.id}
+                className={"face-opt" + (local.face === f.id ? " active" : "")}
+                disabled={missing}
+                onClick={() => useStore.getState().setLocal({ face: f.id })}
+              >
+                <b>{f.name}</b>
+                <span>{missing ? "Needs a face scan: run scripts/face_scan.py on a front photo" : f.blurb}</span>
+              </button>
+            );
+          })}
+        </div>
+        <p className="fine">This window only. Jarvis's mouth follows the audio coming out of the speaker.</p>
       </fieldset>
 
       <fieldset className="setting">

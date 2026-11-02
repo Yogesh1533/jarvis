@@ -1061,6 +1061,16 @@ def api_settings():
     return hub.settings_msg()
 
 
+@app.get("/api/face/hologram")
+def api_face_hologram():
+    """The hologram face's landmark points. They come from the owner's own photo,
+    so they live in the gitignored data/ folder and are served from there."""
+    path = config.ROOT / "data" / "face" / "hologram.json"
+    if not path.is_file():
+        return Response(status_code=404)
+    return Response(path.read_bytes(), media_type="application/json", headers={"Cache-Control": "no-cache"})
+
+
 # ── REST: panel data ─────────────────────────────────────────────────
 def _google(fn):
     if not config.GOOGLE_TOKEN_PATH.exists():

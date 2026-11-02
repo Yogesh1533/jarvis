@@ -5,7 +5,7 @@ import { audio } from "./lib/audio";
 import { desktop, isApp } from "./lib/desktop";
 import { link, type ServerMsg } from "./lib/link";
 import { useStore, type Brain, type Mode } from "./lib/store";
-import { Reactor } from "./components/Reactor";
+import { Stage } from "./components/Stage";
 import {
   Boot, Caption, CommandBar, ConfirmDialog, HistoryDrawer, SettingsDrawer,
   StatusLine, Toasts, ToolTrace, TopBar, useHotkeys,
@@ -195,7 +195,7 @@ export default function App() {
   if (layout === "orb") {
     return (
       <div className={"hud orb" + (ready ? " ready" : "")}>
-        <Reactor onActivate={activate} />
+        <Stage onActivate={activate} />
         <div className="orb-text">
           <HearingLine />
           <Caption compact />
@@ -210,7 +210,7 @@ export default function App() {
   return (
     <div className={"hud" + (ready ? " ready" : "")}>
       <div className="backdrop" aria-hidden="true" />
-      <Reactor onActivate={activate} />
+      <Stage onActivate={activate} />
       <TopBar />
       <main className="deck">
         <div className="col col-left">
