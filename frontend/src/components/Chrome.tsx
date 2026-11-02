@@ -625,6 +625,7 @@ export function SettingsDrawer() {
           ))}
         </div>
         <Toggle label="Interface sounds" on={local.sounds} onChange={toggleSounds} />
+        <Toggle label="HUD telemetry" on={local.telemetry} onChange={() => useStore.getState().setLocal({ telemetry: !local.telemetry })} />
       </fieldset>
 
       {config && (

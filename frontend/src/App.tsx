@@ -6,6 +6,7 @@ import { desktop, isApp } from "./lib/desktop";
 import { link, type ServerMsg } from "./lib/link";
 import { useStore, type Brain, type Mode } from "./lib/store";
 import { Stage } from "./components/Stage";
+import { HudFrame, Telemetry } from "./components/Telemetry";
 import {
   Boot, Caption, CommandBar, ConfirmDialog, HistoryDrawer, SettingsDrawer,
   StatusLine, Toasts, ToolTrace, TopBar, useHotkeys,
@@ -159,6 +160,7 @@ export default function App() {
   const drawer = useStore((s) => s.drawer);
   const palette = useStore((s) => s.palette);
   const home = useIsHome();
+  const telemetry = useStore((s) => s.local.telemetry);
   useHotkeys(inputRef);
 
   useEffect(() => {
@@ -211,6 +213,8 @@ export default function App() {
     <div className={"hud" + (ready ? " ready" : "")}>
       <div className="backdrop" aria-hidden="true" />
       <Stage onActivate={activate} />
+      {telemetry && <HudFrame />}
+      {telemetry && <Telemetry />}
       <TopBar />
       <main className="deck">
         <div className="col col-left">

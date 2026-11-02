@@ -131,10 +131,11 @@ export interface LocalSettings {
   mic: boolean;
   micDevice: string; // "" = the system default
   face: FaceId; // what fills the stage
+  telemetry: boolean; // frame, identity ring and live readouts
 }
 
 const LOCAL_KEY = "jarvis.local";
-const LOCAL_DEFAULTS: LocalSettings = { sounds: true, mic: true, micDevice: "", face: "orb" };
+const LOCAL_DEFAULTS: LocalSettings = { sounds: true, mic: true, micDevice: "", face: "orb", telemetry: true };
 
 function loadLocal(): LocalSettings {
   try {

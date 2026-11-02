@@ -1197,3 +1197,50 @@ li:hover .ghost-x, .ghost-x:focus-visible, .toast .ghost-x { opacity: 1; }
   .mood-btn { padding: 0 8px; }
   .holo-stack { max-height: none; margin-bottom: 0; }
 }
+
+/* ── Cinematic HUD layer: frame, identity ring, halo, readouts ───── */
+.hud-frame { position: fixed; inset: 10px; pointer-events: none; z-index: 0; border: 1px solid var(--line-soft); clip-path: polygon(0 0, calc(100% - 34px) 0, 100% 34px, 100% 100%, 34px 100%, 0 calc(100% - 34px)); transition: opacity 0.9s ease 0.2s; }
+.hud:not(.ready) .hud-frame, .hud:not(.ready) .tele { opacity: 0; }
+.hud-frame .c { position: absolute; width: 22px; height: 22px; border: 0 solid var(--holo); opacity: 0.8; }
+.hud-frame .tl { left: -1px; top: -1px; border-width: 2px 0 0 2px; }
+.hud-frame .tr { right: -1px; top: -1px; border-width: 2px 2px 0 0; }
+.hud-frame .bl { left: -1px; bottom: -1px; border-width: 0 0 2px 2px; }
+.hud-frame .br { right: -1px; bottom: -1px; border-width: 0 2px 2px 0; }
+.hud-frame .sweep { position: absolute; left: 0; right: 0; height: 90px; top: -90px; background: linear-gradient(transparent, color-mix(in srgb, var(--holo) 9%, transparent), transparent); animation: hud-sweep 7s linear infinite; }
+@keyframes hud-sweep { to { top: 100%; } }
+
+.tele { position: fixed; inset: var(--topbar-h) 0 var(--command-h) 0; z-index: 0; pointer-events: none; display: none; transition: opacity 0.9s ease 0.2s; }
+@media (min-width: 1420px) and (min-height: 720px) { .tele { display: block; } }
+.tele-col { position: absolute; top: calc(var(--stage-top) + 56px); bottom: calc(var(--stage-bottom) + 10px); width: 176px; display: flex; flex-direction: column; justify-content: space-around; gap: 10px; }
+.tele-col.left { right: calc(50% + clamp(150px, 15vw, 230px)); align-items: flex-end; }
+.tele-col.right { left: calc(50% + clamp(150px, 15vw, 230px)); }
+.tele-box { width: 100%; padding: 8px 10px 9px; border: 1px solid var(--line); background: color-mix(in srgb, var(--deep) 22%, rgba(2, 9, 16, 0.55)); backdrop-filter: blur(2px); font-family: var(--mono); font-size: 11px; letter-spacing: 0.08em; color: var(--ice-dim); animation: tele-in 0.8s ease both; }
+.tele-box b { display: block; color: var(--holo); font-weight: 600; letter-spacing: 0.16em; margin-bottom: 4px; }
+.tele-box p { margin: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.tele-box p span { color: var(--ice-faint); }
+.tele-bar { height: 4px; margin-top: 6px; background: color-mix(in srgb, var(--holo) 14%, transparent); }
+.tele-bar + .tele-bar { margin-top: 3px; height: 3px; }
+.tele-bar i { display: block; height: 100%; background: var(--holo); box-shadow: 0 0 8px var(--holo); transition: width 0.5s ease; }
+.tele-bar.live i { transition: none; opacity: 0.85; }
+@keyframes tele-in { from { opacity: 0; transform: translateY(8px); } }
+.tele-box:nth-child(2) { animation-delay: 0.15s; }
+.tele-box:nth-child(3) { animation-delay: 0.3s; }
+
+.ident { position: absolute; right: 372px; top: 20px; width: 92px; height: 92px; overflow: visible; fill: none; stroke: var(--holo); stroke-width: 1.4; filter: drop-shadow(0 0 6px color-mix(in srgb, var(--holo) 60%, transparent)); }
+.ident .r2 { stroke-dasharray: 2 5; opacity: 0.7; }
+.ident .r3 { opacity: 0.45; }
+.ident line { stroke-width: 1; opacity: 0.8; }
+.ident line.big { stroke-width: 2.4; }
+.ident text { fill: var(--ice); stroke: none; font-family: var(--mono); font-size: 15px; letter-spacing: 0.1em; }
+.spin-a { animation: spin 26s linear infinite; transform-origin: 0 0; }
+.spin-b { animation: spin 90s linear infinite reverse; transform-origin: 0 0; }
+.tele.m-thinking .spin-a { animation-duration: 4s; }
+.tele.m-listening .ident, .tele.m-speaking .ident { filter: drop-shadow(0 0 12px var(--holo)); }
+@keyframes spin { to { transform: rotate(360deg); } }
+
+.halo { position: absolute; left: 50%; top: calc(50% + (var(--stage-top) - var(--stage-bottom)) / 2); width: min(62vh, 44vw); aspect-ratio: 1; translate: -50% -50%; overflow: visible; fill: none; stroke: var(--holo); stroke-width: 0.6; opacity: 0.3; }
+.halo line { stroke-width: 0.8; }
+.tele.orb .halo { display: none; }
+.tele.m-speaking .halo, .tele.m-listening .halo { opacity: 0.5; }
+.tele.m-thinking .halo .spin-b { animation-duration: 14s; }
+@media (prefers-reduced-motion: reduce) { .hud-frame .sweep, .spin-a, .spin-b, .tele-box { animation: none; } }
