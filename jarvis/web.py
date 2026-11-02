@@ -963,6 +963,17 @@ async def lifespan(_app):
 app = FastAPI(title="Jarvis", lifespan=lifespan)
 
 
+@app.middleware("http")
+async def _revalidate_frontend(request, call_next):
+    """Make the app check for a new build on every load. Without this the
+    Electron shell kept serving a cached index.html, so UI fixes didn't show
+    up until the cache was cleared. Hashed assets stay cacheable."""
+    response = await call_next(request)
+    if not request.url.path.startswith(("/api", "/ws", "/assets")):
+        response.headers["Cache-Control"] = "no-cache"
+    return response
+
+
 @app.websocket("/ws")
 async def ws_endpoint(ws: WebSocket):
     await ws.accept()

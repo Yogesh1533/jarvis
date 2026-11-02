@@ -122,6 +122,8 @@ code { font-family: var(--mono); font-size: 0.92em; color: var(--holo); }
 
 /* Everything but the reactor fades in after boot. */
 .topbar, .deck, .command { position: relative; z-index: 1; transition: opacity 0.9s ease 0.2s; }
+/* Menus in the top bar (mood) must paint over the side panels below it. */
+.topbar { z-index: 6; }
 .hud:not(.ready) .topbar, .hud:not(.ready) .deck, .hud:not(.ready) .command { opacity: 0; }
 
 /* ── Top bar ──────────────────────────────────────────────────────── */
@@ -649,8 +651,9 @@ li:hover .ghost-x, .ghost-x:focus-visible, .toast .ghost-x { opacity: 1; }
   z-index: 25;
   width: 290px;
   padding: 6px;
-  background: rgba(3, 9, 15, 0.96);
+  background: color-mix(in srgb, var(--void) 94%, var(--deep));
   border: 1px solid var(--line);
+  box-shadow: 0 16px 40px rgba(0, 0, 0, 0.55);
   backdrop-filter: blur(14px);
   -webkit-backdrop-filter: blur(14px);
   animation: rise 0.18s ease;
