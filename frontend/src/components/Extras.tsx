@@ -1,5 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { activate, ask, runHudAction, setLayout, setMic, setServer, toggleFullscreen } from "../lib/actions";
+import { FACES } from "../faces/types";
+import { startDemo } from "../lib/demo";
 import { useStore, type HoloCard } from "../lib/store";
 import { THEMES, type ThemeId } from "../lib/themes";
 import { Icon } from "./Panel";
@@ -161,7 +163,19 @@ export function HoloCards() {
   const cards = useStore((s) => s.cards);
   if (!cards.length) return null;
   return (
-    <div className="holo-stack" aria-label="Cards from Jarvis">
+    <div
+      className="holo-stack"
+      aria-label="Cards from Jarvis"
+      onPointerMove={(e) => {
+        const r = e.currentTarget.getBoundingClientRect();
+        e.currentTarget.style.setProperty("--rx", `${(((e.clientY - r.top) / r.height - 0.5) * -7).toFixed(2)}deg`);
+        e.currentTarget.style.setProperty("--ry", `${(((e.clientX - r.left) / r.width - 0.5) * 9).toFixed(2)}deg`);
+      }}
+      onPointerLeave={(e) => {
+        e.currentTarget.style.setProperty("--rx", "0deg");
+        e.currentTarget.style.setProperty("--ry", "0deg");
+      }}
+    >
       {cards.map((c) => (
         <Card key={c.id} card={c} />
       ))}
@@ -234,6 +248,10 @@ function useCommands(): Command[] {
     (Object.keys(THEMES) as ThemeId[]).forEach((t) =>
       list.push({ id: "theme-" + t, group: "Theme", label: `Theme: ${THEMES[t].name}`, hint: t === server.theme ? "current" : undefined, run: () => setServer({ theme: t }) }),
     );
+    FACES.forEach((f) =>
+      list.push({ id: "face-" + f.id, group: "Face", label: `Face: ${f.name}`, hint: f.id === local.face ? "current" : f.blurb, run: () => useStore.getState().setLocal({ face: f.id }) }),
+    );
+    list.push({ id: "demo", group: "Jarvis", label: "Demo mode (scripted showcase for filming)", hint: "Esc to stop", run: () => { useStore.getState().set({ palette: false }); setTimeout(startDemo, 250); } });
     list.push(
       { id: "mic", group: "Settings", label: `Microphone ${local.mic ? "off" : "on"}`, hint: `now ${on(local.mic)}`, run: () => setMic(!local.mic) },
       { id: "barge", group: "Settings", label: "Interrupt by talking", hint: on(server.barge_in), run: () => setServer({ barge_in: !server.barge_in }) },

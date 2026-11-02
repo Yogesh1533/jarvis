@@ -13,6 +13,7 @@ import { WeatherReadout } from "./Panels";
 // ── Boot ───────────────────────────────────────────────────────────
 const BOOT_LINES = [
   "Initializing neural interface",
+  "Mapping facial landmarks",
   "Linking to Claude core",
   "Calibrating audio array",
   "Loading tool systems",
@@ -67,13 +68,18 @@ export function Boot({ onDone, auto = false }: { onDone: () => void; auto?: bool
           <p className="boot-hint">Your browser needs one click before Jarvis can listen and speak.</p>
         </div>
       ) : (
-        <ol className="boot-lines">
-          {BOOT_LINES.slice(0, shown).map((l, i) => (
-            <li key={l} className={i === BOOT_LINES.length - 1 ? "final" : ""}>
-              {l}
-            </li>
-          ))}
-        </ol>
+        <>
+          <div className="boot-scan" aria-hidden="true" />
+          <ol className="boot-lines">
+            {BOOT_LINES.slice(0, shown).map((l, i) => (
+              <li key={l} className={i === BOOT_LINES.length - 1 ? "final" : ""}>
+                {l}
+                {i < shown - 1 || i === BOOT_LINES.length - 1 ? <b> OK</b> : <b className="busy"> …</b>}
+              </li>
+            ))}
+            <li className="boot-progress" aria-hidden="true"><i style={{ width: `${(shown / BOOT_LINES.length) * 100}%` }} /></li>
+          </ol>
+        </>
       )}
     </div>
   );

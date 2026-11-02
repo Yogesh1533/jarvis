@@ -118,8 +118,11 @@ class AudioEngine {
   }
 
   /** 0..1 loudness of the mic or of Jarvis's voice. */
+  /** Demo mode fakes a speaking voice so the mouth moves without any audio. */
+  demoVoice = false;
+
   level(which: "mic" | "out"): number {
-    if (which === "out" && this.browserSpeaking) {
+    if (which === "out" && (this.browserSpeaking || this.demoVoice)) {
       const t = performance.now() / 1000;
       return 0.35 + 0.25 * Math.abs(Math.sin(t * 9.1) * Math.sin(t * 3.7));
     }

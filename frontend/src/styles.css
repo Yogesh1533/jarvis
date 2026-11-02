@@ -745,7 +745,7 @@ li:hover .ghost-x, .ghost-x:focus-visible, .toast .ghost-x { opacity: 1; }
   flex-direction: column;
   gap: 10px;
   width: min(460px, 100%);
-  max-height: 46vh;
+  max-height: 32vh;
   overflow-y: auto;
   scrollbar-width: thin;
 }
@@ -1246,3 +1246,29 @@ li:hover .ghost-x, .ghost-x:focus-visible, .toast .ghost-x { opacity: 1; }
 .tele.m-speaking .halo, .tele.m-listening .halo { opacity: 0.5; }
 .tele.m-thinking .halo .spin-b { animation-duration: 14s; }
 @media (prefers-reduced-motion: reduce) { .hud-frame .sweep, .spin-a, .spin-b, .tele-box { animation: none; } }
+
+/* ── Boot sequence: scan beam and progress ───────────────────────── */
+.boot-running .boot-scan { position: absolute; left: 0; right: 0; height: 120px; top: -120px; pointer-events: none; background: linear-gradient(transparent, color-mix(in srgb, var(--holo) 22%, transparent) 70%, var(--holo) 99%, transparent); opacity: 0.55; animation: boot-scan 1.9s ease-in-out infinite; }
+@keyframes boot-scan { to { top: 100%; } }
+.boot-lines b { color: var(--holo); font-weight: 600; margin-left: 6px; }
+.boot-lines b.busy { animation: blink 0.7s steps(2) infinite; }
+.boot-lines .boot-progress { width: 260px; height: 3px; margin-top: 10px; background: color-mix(in srgb, var(--holo) 16%, transparent); }
+.boot-lines .boot-progress::before { content: none; }
+.boot-progress i { display: block; height: 100%; background: var(--holo); box-shadow: 0 0 10px var(--holo); transition: width 0.25s ease; }
+@keyframes blink { 50% { opacity: 0.15; } }
+
+/* ── Holographic cards: tilt, scan beam, corner brackets, flicker ── */
+.holo-stack { perspective: 900px; --rx: 0deg; --ry: 0deg; }
+.holo { transform: rotateX(var(--rx)) rotateY(var(--ry)); transition: transform 0.2s ease-out; overflow: hidden; background-image:
+    linear-gradient(160deg, color-mix(in srgb, var(--holo) 12%, transparent), rgba(2, 9, 16, 0.7) 60%),
+    repeating-linear-gradient(0deg, transparent 0 3px, color-mix(in srgb, var(--holo) 5%, transparent) 3px 4px); animation: project 0.45s cubic-bezier(0.2, 0.8, 0.2, 1), holo-flicker 6s steps(1) 0.6s infinite; }
+.holo::before { content: ""; position: absolute; left: 0; right: 0; height: 40px; top: -40px; pointer-events: none; background: linear-gradient(transparent, color-mix(in srgb, var(--holo) 26%, transparent), transparent); animation: holo-beam 0.9s ease-out 0.15s 1 both, holo-beam 5.5s linear 3s infinite; }
+.holo::after { content: ""; position: absolute; inset: 4px; pointer-events: none; opacity: 0.8;
+  background:
+    linear-gradient(var(--holo), var(--holo)) top left / 10px 1px no-repeat, linear-gradient(var(--holo), var(--holo)) top left / 1px 10px no-repeat,
+    linear-gradient(var(--holo), var(--holo)) top right / 10px 1px no-repeat, linear-gradient(var(--holo), var(--holo)) top right / 1px 10px no-repeat,
+    linear-gradient(var(--holo), var(--holo)) bottom left / 10px 1px no-repeat, linear-gradient(var(--holo), var(--holo)) bottom left / 1px 10px no-repeat,
+    linear-gradient(var(--holo), var(--holo)) bottom right / 10px 1px no-repeat, linear-gradient(var(--holo), var(--holo)) bottom right / 1px 10px no-repeat; }
+@keyframes holo-beam { to { top: 100%; } }
+@keyframes holo-flicker { 0%, 92%, 100% { opacity: 1; } 93% { opacity: 0.82; } 95% { opacity: 1; } 97% { opacity: 0.9; } }
+@media (prefers-reduced-motion: reduce) { .holo, .holo::before, .boot-scan { animation: none; } .holo { transition: none; } }
