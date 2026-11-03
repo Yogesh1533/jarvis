@@ -24,6 +24,7 @@ class AgentBackend:
         self.confirm = confirm
         self.system_prompt = system_prompt
         self._client = None
+        self._connecting = None
         self._model = None
         # The standalone CLI installs to ~/.local/bin; make sure the SDK
         # finds it even when launched from launchd/preview contexts.
@@ -41,8 +42,17 @@ class AgentBackend:
         ).start()
 
     # -- sync facade ----------------------------------------------------
-    def chat(self, user_text):
-        future = asyncio.run_coroutine_threadsafe(self._chat(user_text), self._loop)
+    def warm(self):
+        """Start the CLI and connect in the background, so the first reply
+        doesn't pay for it."""
+        asyncio.run_coroutine_threadsafe(self._ensure_client(), self._loop)
+
+    streams = True   # chat() can report the reply's text as it's written
+
+    def chat(self, user_text, on_text=None):
+        """on_text(text_so_far) is called from the SDK thread as each text
+        block streams in, so the caller can start speaking early."""
+        future = asyncio.run_coroutine_threadsafe(self._chat(user_text, on_text), self._loop)
         return future.result(timeout=600)
 
     # -- async internals -------------------------------------------------
@@ -69,8 +79,16 @@ class AgentBackend:
         return sdk_tools
 
     async def _ensure_client(self):
-        if self._client is not None:
-            return self._client
+        # One shared connect, so warm() and the first chat() never race.
+        if self._connecting is None:
+            self._connecting = asyncio.ensure_future(self._connect())
+        try:
+            return await self._connecting
+        except Exception:
+            self._connecting = self._client = None   # retry on the next turn
+            raise
+
+    async def _connect(self):
         from claude_agent_sdk import (
             ClaudeAgentOptions,
             ClaudeSDKClient,
@@ -91,14 +109,23 @@ class AgentBackend:
             # Jarvis's tool surface is its own; no shell/file/web builtins.
             disallowed_tools=_BUILTIN_TOOLS_OFF,
             max_turns=24,
+            include_partial_messages=True,   # stream text so speech can start early
+            # Voice replies need speed, not deep thought (LLM_EFFORT, default low).
+            effort=config.LLM_EFFORT,
+            # Isolation: don't load ~/.claude settings, plugins, hooks, skills
+            # or other MCP servers. They bloat every turn and slow startup.
+            setting_sources=[],
+            skills=[],
+            extra_args={"strict-mcp-config": None},
         )
         self._model = options.model
         self._client = ClaudeSDKClient(options=options)
         await self._client.connect()
         return self._client
 
-    async def _chat(self, user_text):
+    async def _chat(self, user_text, on_text=None):
         from claude_agent_sdk import AssistantMessage, TextBlock
+        from claude_agent_sdk.types import StreamEvent
 
         client = await self._ensure_client()
         wanted = settings.model_id()
@@ -109,8 +136,22 @@ class AgentBackend:
 
         await client.query(stamp(user_text))
         parts = []
+        streamed = ""
         async for message in client.receive_response():
-            if isinstance(message, AssistantMessage):
+            if isinstance(message, StreamEvent):
+                event = message.event
+                if on_text is None or message.parent_tool_use_id:
+                    continue
+                if event.get("type") == "content_block_start":
+                    streamed = ""
+                elif event.get("type") == "content_block_delta" \
+                        and event.get("delta", {}).get("type") == "text_delta":
+                    streamed += event["delta"].get("text", "")
+                    try:
+                        on_text(streamed)
+                    except Exception as exc:  # noqa: BLE001 — never break the turn
+                        print("[agent] on_text failed: {}".format(exc))
+            elif isinstance(message, AssistantMessage):
                 for block in message.content:
                     if isinstance(block, TextBlock) and block.text.strip():
                         parts.append(block.text.strip())

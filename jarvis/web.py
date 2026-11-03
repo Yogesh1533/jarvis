@@ -526,6 +526,8 @@ class Hub:
         self.additions = []                 # said while Jarvis was thinking
         self._additions_lock = threading.Lock()
         self._ids = itertools.count(1)
+        self._assistant_lock = threading.Lock()
+        self._early = None                  # first sentence spoken mid-turn
         self._filler_cache = {}
         self.voice = VoicePipeline(self)
 
@@ -589,6 +591,23 @@ class Hub:
             },
         }
 
+    def _get_assistant(self):
+        with self._assistant_lock:
+            if self.assistant is None:
+                self.assistant = Assistant(confirm=self.web_confirm)
+            return self.assistant
+
+    def warm(self):
+        """Connect the brain and load the voice before the first request,
+        so the first reply is as quick as the rest."""
+        try:
+            self._get_assistant()
+            if self.assistant.backend is not None and hasattr(self.assistant.backend, "warm"):
+                self.assistant.backend.warm()
+            self._synth("Ready.")
+        except Exception as exc:  # noqa: BLE001 — the first turn retries
+            print("[hud] warm-up failed: {}".format(exc))
+
     # -- speech out ------------------------------------------------------
     def _synth(self, text, previous="", following=""):
         from .audio import tts
@@ -596,10 +615,15 @@ class Hub:
         raw, mime = tts.synthesize(text, previous, following)
         return base64.b64encode(raw).decode("ascii"), mime
 
-    def say(self, text, kind, then, speak=True, extra=None):
+    def say(self, text, kind, then, speak=True, extra=None, early=None):
         """Send text to the clients and, if speaking, its audio sentence by
-        sentence. `then` runs once the client reports playback finished."""
-        uid = next(self._ids)
+        sentence. `then` runs once the client reports playback finished.
+        `early`: state from _early_speech, whose first sentence is already
+        playing; the rest continues that utterance."""
+        early = early if early and early["sentence"] else None
+        if early and early["cut"]:
+            speak, early = False, None   # they stopped the lead-in: show the rest
+        uid = early["id"] if early else next(self._ids)
         msg = {"type": kind, "id": uid, "text": text, "speak": speak}
         msg.update(extra or {})
         if not speak:
@@ -613,25 +637,69 @@ class Hub:
             self.set_state("speaking")
         self.voice.watch("speaking")
         self.emit(msg)
-        segments = _speech_segments(text)
-        for seq, segment in enumerate(segments):
+        segments, start = _speech_segments(text), 0
+        if early:
+            # Its first sentence already went out as seq 0. If the reply
+            # opens with it, skip it; otherwise it was a lead-in before
+            # tools ran, and the whole reply follows it.
+            rest = _speakable(text)
+            if rest.startswith(early["sentence"]):
+                rest = rest[len(early["sentence"]):].strip()
+            segments, start = ([rest] if rest else []), 1
+            if not segments:   # nothing more to say: close the utterance
+                self.emit({"type": "audio", "id": uid, "seq": 1, "last": True,
+                           "audio": None, "mime": None, "text": "", "_to": "speaker"})
+                return
+        for seq, segment in enumerate(segments, start):
+            i = seq - start
             if self.playing_id != uid:
                 return   # interrupted; don't bother synthesizing the rest
             audio = mime = None
             try:
                 audio, mime = self._synth(
                     segment,
-                    segments[seq - 1] if seq else "",
-                    segments[seq + 1] if seq + 1 < len(segments) else "",
+                    segments[i - 1] if i else (early["sentence"] if early else ""),
+                    segments[i + 1] if i + 1 < len(segments) else "",
                 )
             except Exception as exc:  # noqa: BLE001 — the client's own voice takes over
                 print("[hud] TTS failed, client voice will be used: {}".format(exc))
             if self.playing_id != uid:
                 return   # interrupted while synthesizing: don't play the rest
             self.emit({
-                "type": "audio", "id": uid, "seq": seq, "last": seq == len(segments) - 1,
+                "type": "audio", "id": uid, "seq": seq, "last": i == len(segments) - 1,
                 "audio": audio, "mime": mime, "text": segment, "_to": "speaker",
             })
+
+    def _early_speech(self):
+        """An on_text callback that speaks the reply's first sentence as soon
+        as it's written, while the model finishes the rest. Returns
+        (callback, state); say() picks up from state for the rest."""
+        state = self._early = {"id": next(self._ids), "sentence": None, "cut": False}
+
+        def on_text(text):
+            if state["sentence"] is not None or state["cut"]:
+                return
+            parts = _SENTENCE.split(_speakable(text), maxsplit=1)
+            if len(parts) < 2 or len(parts[0]) < 4:
+                return   # no finished sentence yet
+            sentence = state["sentence"] = parts[0].strip()
+            self.filler_sent = True   # already talking; no "one moment"
+            self.speaking_text = sentence
+
+            def job():
+                audio = mime = None
+                try:
+                    audio, mime = self._synth(sentence)
+                except Exception as exc:  # noqa: BLE001 — the client's own voice takes over
+                    print("[hud] TTS failed, client voice will be used: {}".format(exc))
+                self.emit({
+                    "type": "audio", "id": state["id"], "seq": 0, "last": False,
+                    "audio": audio, "mime": mime, "text": sentence, "_to": "speaker",
+                })
+
+            threading.Thread(target=job, daemon=True, name="hud-early-speech").start()
+
+        return on_text, state
 
     def filler(self):
         """A short "one moment" while a voice request runs slow tools."""
@@ -696,6 +764,7 @@ class Hub:
 
     def _turn(self, text, source, speak, last=False):
         error = False
+        early = None
         try:
             self.voice.watch("thinking" if source == "voice" else None)
             self.after_playback = None
@@ -706,13 +775,15 @@ class Hub:
                 self.emit({"type": "transcript", "role": "user", "text": text, "source": source})
                 _log("user", text)
             self.set_state("thinking")
-            if self.assistant is None:
-                self.assistant = Assistant(confirm=self.web_confirm)
+            self._get_assistant()
             prompt = text
             if self.interrupted:
                 prompt = "(I cut off your previous reply before you finished it.) " + text
                 self.interrupted = False
-            reply = self.assistant.chat(prompt)
+            on_text = None
+            if speak:
+                on_text, early = self._early_speech()
+            reply = self.assistant.chat(prompt, on_text=on_text)
             # They kept talking while we worked: answer that too. The reply
             # so far goes on screen; only the last one is spoken.
             while True:
@@ -723,6 +794,7 @@ class Hub:
                 self.emit({"type": "reply", "id": next(self._ids), "text": reply, "speak": False})
                 _log("user", extra)
                 last = ends_conversation(extra)
+                early = None   # the spoken lead-in belonged to the first answer
                 reply = self.assistant.chat(
                     "(I added this while you were answering; your previous answer was "
                     "shown on screen but not read out.) " + extra
@@ -743,7 +815,7 @@ class Hub:
         self.say(
             reply, kind="reply",
             then="followup" if source == "voice" and not last else "idle",
-            speak=speak and not error, extra={"error": error},
+            speak=speak and not error, extra={"error": error}, early=early,
         )
 
     def web_confirm(self, prompt):
@@ -871,6 +943,8 @@ class Hub:
         """Client stopped playback; listen instead of talking."""
         self.after_playback = None
         self.playing_id = None
+        if self._early is not None and self.turn_lock.locked():
+            self._early["cut"] = True   # stopped while the reply was still being written
         if self.confirm:
             self.voice.listen(config.RECORD_START_TIMEOUT, "confirm")
             return
@@ -959,6 +1033,7 @@ async def lifespan(_app):
     recall.warm()   # embedder + index catch-up, off the main thread
     proactive.Proactive(hub).start()   # meeting alerts, morning briefing
     threading.Thread(target=hub.voice.load, daemon=True, name="hud-voice-load").start()
+    threading.Thread(target=hub.warm, daemon=True, name="hud-warm").start()
     # Now playing (YouTube Music, Spotify...) pushed live to every window.
     media.watcher.start(lambda now: hub.emit({"type": "media", "now": now}))
     yield

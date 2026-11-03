@@ -103,13 +103,16 @@ class Assistant:
             fallbacks="default",
         )
 
-    def chat(self, user_text):
+    def chat(self, user_text, on_text=None):
         """Send one user utterance; run tools until the model is done.
 
-        Returns the assistant's final spoken/printed reply.
+        Returns the assistant's final spoken/printed reply. on_text, where
+        the backend supports it, gets the reply's text as it streams in.
         """
         skills.begin_turn()
         if self.backend is not None:
+            if on_text is not None and getattr(self.backend, "streams", False):
+                return self.backend.chat(user_text, on_text)
             return self.backend.chat(user_text)
 
         self.messages.append({"role": "user", "content": stamp(user_text)})
