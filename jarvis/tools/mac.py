@@ -24,8 +24,27 @@ def _run(cmd, input_text=None, timeout=20):
         cmd, input=input_text, capture_output=True, text=True, timeout=timeout
     )
     if proc.returncode != 0:
-        raise RuntimeError((proc.stderr or proc.stdout or "command failed").strip())
+        raise RuntimeError(_explain((proc.stderr or proc.stdout or "command failed").strip()))
     return proc.stdout.strip()
+
+
+# macOS permission errors, in words that say where to fix them.
+_PERMISSION_HINTS = (
+    (("(1002)", "-25211", "assistive access"),
+     "Jarvis isn't allowed to control the keyboard or UI. Turn Jarvis on under System "
+     "Settings > Privacy & Security > Accessibility, then quit and reopen it."),
+    (("-1743", "not authorized to send apple events"),
+     "Jarvis isn't allowed to control that app. Allow it under System Settings > "
+     "Privacy & Security > Automation."),
+)
+
+
+def _explain(message):
+    low = message.lower()
+    for needles, hint in _PERMISSION_HINTS:
+        if any(n in low for n in needles):
+            return "{} ({})".format(hint, message)
+    return message
 
 
 def osa(script, *args, timeout=20):

@@ -167,8 +167,11 @@ function orbClick() {
   }
   orbTimer = setTimeout(() => {
     orbTimer = undefined;
-    if (audio.speaking) void audio.pause(!audio.paused);
-    else activate();
+    if (audio.speaking) {
+      const on = !audio.paused;
+      void audio.pause(on);
+      link.send({ type: "hold", on });
+    } else activate();
   }, 350);
 }
 

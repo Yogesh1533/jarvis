@@ -908,6 +908,11 @@ class Hub:
                 self.voice.listen(config.RECORD_START_TIMEOUT, "chat")
         elif kind == "interrupt":
             self.interrupt()
+        elif kind == "hold":
+            # The client paused Jarvis's voice mid-sentence: stop listening for a
+            # barge-in meanwhile, and start again when it carries on.
+            if self.state == "speaking":
+                self.voice.watch("speaking" if not data.get("on") else None)
         elif kind == "playback_done":
             self.playback_done(data.get("id"))
         elif kind == "confirm":
