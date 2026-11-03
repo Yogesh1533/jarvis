@@ -902,8 +902,9 @@ li:hover .ghost-x, .ghost-x:focus-visible, .toast .ghost-x { opacity: 1; }
 
 /* Inside the desktop app: a transparent orb, and a draggable title area. */
 :root.app[data-layout="orb"] body { background: transparent; }
-:root.app .hud.orb { -webkit-app-region: drag; }
-:root.app .hud.orb button, :root.app .hud.orb .reactor-hit { -webkit-app-region: no-drag; }
+/* The orb is dragged from script (App.tsx): a CSS drag region swallows its clicks. */
+.hud.orb { cursor: grab; }
+.hud.orb button { cursor: pointer; }
 :root.app .topbar { -webkit-app-region: drag; padding-left: 88px; }
 :root.app .topbar button, :root.app .topbar a, :root.app .mood-menu, :root.app .weather { -webkit-app-region: no-drag; }
 

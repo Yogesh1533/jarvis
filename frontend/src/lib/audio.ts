@@ -252,6 +252,7 @@ class AudioEngine {
 
   /** Stop speaking now and drop the rest of the utterance. */
   stop() {
+    this.paused = false;
     if (this.utterance !== null) this.stopped = this.utterance;
     this.utterance = null;
     this.segments.clear();
@@ -276,6 +277,22 @@ class AudioEngine {
       speechSynthesis.cancel();
     }
     finish?.(true);
+  }
+
+  /** True while Jarvis's voice is held mid-sentence by pause(). */
+  paused = false;
+
+  /** Hold Jarvis's voice where it is, or carry on from there. */
+  async pause(on: boolean) {
+    if (on === this.paused) return;
+    this.paused = on;
+    if (this.browserSpeaking) {
+      if (on) speechSynthesis.pause();
+      else speechSynthesis.resume();
+    }
+    if (!this.ctx) return;
+    if (on) await this.ctx.suspend();
+    else await this.ctx.resume();
   }
 
   get speaking() {

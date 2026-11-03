@@ -152,6 +152,62 @@ function handle(msg: ServerMsg) {
   }
 }
 
+// In the orb one click pauses Jarvis mid-sentence and the next carries on (or starts
+// listening when he's quiet); a double click opens the full HUD.
+// The single action waits a beat so a double click doesn't also trigger it.
+let orbTimer: ReturnType<typeof setTimeout> | undefined;
+let dragEnded = 0;
+function orbClick() {
+  if (Date.now() - dragEnded < 300) return; // the mouse-up that ended a drag isn't a click
+  if (orbTimer) {
+    clearTimeout(orbTimer);
+    orbTimer = undefined;
+    setLayout("full");
+    return;
+  }
+  orbTimer = setTimeout(() => {
+    orbTimer = undefined;
+    if (audio.speaking) void audio.pause(!audio.paused);
+    else activate();
+  }, 350);
+}
+
+/** Drag the floating orb by any part of it that isn't a button. */
+function useOrbDrag(on: boolean) {
+  useEffect(() => {
+    if (!on || !desktop) return;
+    let down: { x: number; y: number } | null = null;
+    let dragging = false;
+    const onDown = (e: PointerEvent) => {
+      const t = e.target as HTMLElement;
+      if (e.button !== 0 || t.closest(".orb-bar, .toasts")) return;
+      down = { x: e.screenX, y: e.screenY };
+    };
+    const onMove = (e: PointerEvent) => {
+      if (!down || dragging || e.buttons !== 1) return;
+      if (Math.hypot(e.screenX - down.x, e.screenY - down.y) < 5) return;
+      dragging = true;
+      desktop?.dragWindow(true);
+    };
+    const onUp = () => {
+      if (dragging) {
+        desktop?.dragWindow(false);
+        dragEnded = Date.now();
+      }
+      down = null;
+      dragging = false;
+    };
+    window.addEventListener("pointerdown", onDown);
+    window.addEventListener("pointermove", onMove);
+    window.addEventListener("pointerup", onUp);
+    return () => {
+      window.removeEventListener("pointerdown", onDown);
+      window.removeEventListener("pointermove", onMove);
+      window.removeEventListener("pointerup", onUp);
+    };
+  }, [on]);
+}
+
 export default function App() {
   const [ready, setReady] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
@@ -162,6 +218,7 @@ export default function App() {
   const home = useIsHome();
   const telemetry = useStore((s) => s.local.telemetry);
   useHotkeys(inputRef);
+  useOrbDrag(layout === "orb");
 
   useEffect(() => {
     document.documentElement.dataset.theme = theme;
@@ -180,6 +237,11 @@ export default function App() {
     const off = link.on(handle);
     link.connect();
     desktop?.onSummon(() => summon());
+    // The floating orb only sees the cursor inside its own window; the app reports
+    // where it is on the whole screen and the faces read it as a pointer move.
+    desktop?.onCursor((p) =>
+      window.dispatchEvent(new PointerEvent("pointermove", { clientX: p.x, clientY: p.y })),
+    );
     desktop?.onLayout((l) => useStore.getState().set({ layout: l, drawer: null, palette: false }));
     return () => {
       off();
@@ -197,7 +259,7 @@ export default function App() {
   if (layout === "orb") {
     return (
       <div className={"hud orb" + (ready ? " ready" : "")}>
-        <Stage onActivate={activate} />
+        <Stage onActivate={orbClick} />
         <div className="orb-text">
           <HearingLine />
           <Caption compact />

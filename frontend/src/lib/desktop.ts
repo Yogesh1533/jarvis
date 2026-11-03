@@ -8,6 +8,8 @@ export interface DesktopBridge {
   setLayout(layout: Layout): void;
   toggleFullscreen(): void;
   onSummon(fn: () => void): void;
+  dragWindow(on: boolean): void;
+  onCursor(fn: (p: { x: number; y: number }) => void): void;
   onLayout(fn: (layout: Layout) => void): void;
 }
 

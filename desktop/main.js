@@ -20,6 +20,7 @@ const STATE_FILE = path.join(app.getPath("userData"), "window.json");
 // Jarvis speaks without a click first, and keeps listening in the background.
 app.commandLine.appendSwitch("autoplay-policy", "no-user-gesture-required");
 
+
 let win = null;
 let tray = null;
 let layout = "full";
@@ -70,6 +71,7 @@ function createWindow() {
     transparent: true,
     backgroundColor: "#00000000",
     titleBarStyle: "hiddenInset",
+    acceptFirstMouse: true, // the floating orb is never focused: its first click must count
     title: "Jarvis",
     webPreferences: {
       preload: path.join(__dirname, "preload.js"),
@@ -120,13 +122,29 @@ function createWindow() {
 
   applyLayout(layout, { notify: false, initial: true });
   win.loadFile(path.join(__dirname, "loading.html"), { query: { status: "Starting Jarvis" } });
-  win.once("ready-to-show", () => (layout === "orb" ? win.showInactive() : win.show()));
+  win.once("ready-to-show", () => {
+    if (layout !== "orb") return win.show();
+    win.showInactive();
+    // Showing a hidden window puts back the position it was created at; set the orb's again.
+    win.setBounds(orbBounds(), false);
+  });
+}
+
+/** Keep the orb fully on a screen: macOS slides a half-off-screen window back when
+ * it's clicked, which moves it out from under the second click of a double click. */
+function onScreen(b) {
+  const wa = screen.getDisplayMatching(b).workArea;
+  return {
+    ...b,
+    x: Math.round(Math.min(Math.max(b.x, wa.x), wa.x + wa.width - b.width)),
+    y: Math.round(Math.min(Math.max(b.y, wa.y), wa.y + wa.height - b.height)),
+  };
 }
 
 function orbBounds() {
   const area = screen.getPrimaryDisplay().workArea;
   const saved = loadState().orb;
-  if (saved) return { ...saved, ...ORB };
+  if (saved) return onScreen({ ...saved, ...ORB });
   return { x: area.x + area.width - ORB.width - 24, y: area.y + area.height - ORB.height - 24, ...ORB };
 }
 
@@ -146,13 +164,15 @@ function applyLayout(next, { notify = true, initial = false, auto = false } = {}
     // skipTransformProcessType keeps the app a normal one: without it macOS
     // turns it into an accessory app and the Dock icon disappears.
     win.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true, skipTransformProcessType: true });
-    win.setBounds(orbBounds(), true);
+    // Not animated at startup: the window is still hidden, and the half-finished
+    // animation would resume (sliding the orb across the screen) on the first click.
+    win.setBounds(orbBounds(), !initial);
   } else {
     win.setWindowButtonVisibility(true);
     win.setResizable(true);
     win.setAlwaysOnTop(false);
     win.setVisibleOnAllWorkspaces(false, { skipTransformProcessType: true });
-    win.setBounds(loadState().full || { width: 1440, height: 900 }, true);
+    win.setBounds(loadState().full || { width: 1440, height: 900 }, !initial);
     if (initial) win.center();
   }
   if (notify) win.webContents.send("layout", layout);
@@ -278,6 +298,44 @@ if (!app.requestSingleInstanceLock()) {
     });
     ipcMain.on("set-layout", (_e, next) => {
       if (next !== layout) applyLayout(next, { notify: false });
+    });
+    // The orb is a small window, so it never sees the cursor elsewhere on screen.
+    // While it floats, report where the cursor is (as a point inside the window,
+    // pulled in from far away) so the face can follow it.
+    let lastCursor = "";
+    setInterval(() => {
+      if (!win || win.isDestroyed() || layout !== "orb" || !win.isVisible()) return;
+      const c = screen.getCursorScreenPoint();
+      const b = win.getBounds();
+      const REACH = 700;
+      const nx = Math.max(-1, Math.min(1, (c.x - (b.x + b.width / 2)) / REACH));
+      const ny = Math.max(-1, Math.min(1, (c.y - (b.y + b.height / 2)) / REACH));
+      const key = nx.toFixed(2) + "," + ny.toFixed(2);
+      if (key === lastCursor) return;
+      lastCursor = key;
+      win.webContents.send("cursor", {
+        x: Math.round(b.width / 2 + (nx * b.width) / 2),
+        y: Math.round(b.height / 2 + (ny * b.height) / 2),
+      });
+    }, 33);
+    // Dragging the floating orb. A CSS drag region would swallow its clicks, so the
+    // page tells us when a drag starts and ends and we follow the cursor meanwhile.
+    let dragTimer = null;
+    ipcMain.on("drag-window", (_e, on) => {
+      clearInterval(dragTimer);
+      dragTimer = null;
+      if (!win || layout !== "orb") return;
+      if (!on) {
+        saveState({ orb: win.getBounds() });
+        return;
+      }
+      const c0 = screen.getCursorScreenPoint();
+      const b0 = win.getBounds();
+      dragTimer = setInterval(() => {
+        if (!win || win.isDestroyed()) return clearInterval(dragTimer);
+        const c = screen.getCursorScreenPoint();
+        win.setBounds(onScreen({ x: b0.x + c.x - c0.x, y: b0.y + c.y - c0.y, width: b0.width, height: b0.height }));
+      }, 8);
     });
     ipcMain.on("toggle-fullscreen", () => {
       if (layout === "full") win.setSimpleFullScreen(!win.isSimpleFullScreen());

@@ -7,5 +7,7 @@ contextBridge.exposeInMainWorld("jarvisDesktop", {
   setLayout: (layout) => ipcRenderer.send("set-layout", layout === "orb" ? "orb" : "full"),
   toggleFullscreen: () => ipcRenderer.send("toggle-fullscreen"),
   onSummon: (fn) => ipcRenderer.on("summon", () => fn()),
+  dragWindow: (on) => ipcRenderer.send("drag-window", !!on),
+  onCursor: (fn) => ipcRenderer.on("cursor", (_e, p) => fn(p)),
   onLayout: (fn) => ipcRenderer.on("layout", (_e, layout) => fn(layout)),
 });
