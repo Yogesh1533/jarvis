@@ -7,13 +7,23 @@ are never touched. Starting, cancelling and cleaning up always confirm.
 
 `RUNNER` does the actual agent work (the Claude Agent SDK runner is set in a
 later task; tests swap in a fake). `guard()` is the per-tool-call path and
-command check the runner applies. It is best-effort string matching; the
-confirmation gate and worktree isolation are the real boundary.
+command check the runner applies. File tools must stay inside the worktree.
+Bash commands are matched against deny rules (git commands that reach a
+remote or the shared .git, gh, ssh, sudo, global installs, secrets) and
+every cd target / absolute / `~` / `..` token must resolve inside the
+worktree (or a small allow-list: /dev/null, /tmp, system bin dirs).
+
+This is best-effort string matching. Known residual bypasses: command
+substitution (`bash -c "$(...)"`), variables, writing a script and running
+it, and python/node `subprocess`. The confirmation gate and worktree
+isolation are the real boundary.
 
 Config is read at call time.
 """
+import os
 import re
 import secrets as _rand
+import shlex
 import subprocess
 import threading
 from datetime import datetime
@@ -146,17 +156,51 @@ _SECRET_NAME = re.compile(r"^(\.env.*|.*\.pem|id_.*|credentials\.json)$", re.I)
 _SECRET_IN_CMD = re.compile(
     r"(?<![\w.-])\.env[\w.-]*|\.pem\b|(?<![\w.-])id_[\w.-]*|credentials\.json|\.secrets\b", re.I)
 
+# `git` plus any global options (-c k=v, -C dir, --no-pager, --git-dir=x, -p ...)
+# before the subcommand, so options can't hide the subcommand from the rules.
+_GIT = r"\bgit\b(?:\s+(?:-[cC]\s+\S+|--?[\w-]+(?:=\S+)?))*\s+"
+_SEG = r"[^;&|\n]*?"   # the rest of one simple command
+
 _BASH_DENY = [
-    (re.compile(r"\bgit\s+(push|remote|worktree)\b"), "git push/remote/worktree isn't allowed"),
-    (re.compile(r"\bgit\s+(checkout|switch)\b(?!\s+-b)"), "switching branches isn't allowed"),
-    (re.compile(r"\bgit\s+(-C|--git-dir|--work-tree)\b"), "git on another repo isn't allowed"),
+    (re.compile(r"\bgit\b(?:\s+(?:-c\s+\S+|--?[\w-]+(?:=\S+)?))*\s+(-C\b|--git-dir\b|--work-tree\b)"),
+     "git on another repo isn't allowed"),
+    (re.compile(r"\bgit\b" + _SEG + r"\s(--git-dir|--work-tree)\b"), "git on another repo isn't allowed"),
+    (re.compile(r"\bGIT_(DIR|WORK_TREE|INDEX_FILE|COMMON_DIR|OBJECT_DIRECTORY|CONFIG\w*)\s*="),
+     "redirecting git with environment variables isn't allowed"),
+    (re.compile(_GIT + r"(push|remote|worktree|update-ref|symbolic-ref|send-pack|http-push|"
+                r"filter-branch|replace)\b"),
+     "that git command could change the main repo or a remote"),
+    (re.compile(_GIT + r"(checkout|switch)\b(?!\s+-b\b)"), "switching branches isn't allowed"),
+    (re.compile(_GIT + r"config\b(?!\s+(--get|--get-all|--get-regexp|--list|-l)\b)"),
+     "changing git config isn't allowed (it's shared with the main repo)"),
+    (re.compile(_GIT + r"config\b" + _SEG + r"\s(--global|--system|--unset\S*|--add|--replace-all|"
+                r"--rename-section|--remove-section|--edit|-e)\b"),
+     "changing git config isn't allowed (it's shared with the main repo)"),
+    (re.compile(_GIT + r"branch\b" + _SEG + r"\s(-(?!-)[a-zA-Z]*[dDfmMcC][a-zA-Z]*|"
+                r"--(delete|force|move|copy))\b"),
+     "deleting, moving or forcing branches isn't allowed"),
+    (re.compile(_GIT + r"stash\s+(drop|clear)\b"), "dropping stashes isn't allowed"),
+    (re.compile(_GIT + r"tag\b" + _SEG + r"\s(-d|--delete)\b"), "deleting tags isn't allowed"),
+    (re.compile(_GIT + r"reflog\s+(expire|delete)\b"), "rewriting the reflog isn't allowed"),
+    (re.compile(_GIT + r"gc\b" + _SEG + r"--prune"), "pruning objects isn't allowed"),
+    (re.compile(r"\bgh\b"), "the GitHub CLI isn't allowed"),
     (re.compile(r"\b(ssh|scp|rsync|sudo|brew)\b"), "ssh/scp/rsync/sudo/brew aren't allowed"),
     (re.compile(r"\|\s*(sudo\s+)?(ba|z)?sh\b"), "piping into a shell isn't allowed"),
     (re.compile(r"\bnpm\s+(i|install)\s+(-g|--global)\b"), "global npm installs aren't allowed"),
-    (re.compile(r"\brm\s+-(rf|fr)\s+(/|~|\$HOME)"), "rm -rf on / or ~ isn't allowed"),
+    (re.compile(r"\brm\b" + _SEG + r"\s(/|~/?|\$HOME/?|\$\{HOME\}/?)(?=\s|$|[;&|)])"),
+     "rm on / or ~ isn't allowed"),
+    (re.compile(r"\$\{?HOME\b"), "commands using $HOME aren't allowed"),
 ]
 _PIP = re.compile(r"\bpip3?\s+install\b")
 _VENV_START = re.compile(r"\s*(uv\b|\.venv/bin/|python3?\s+-m\s+venv\b)")
+
+# Paths outside the worktree a command may name: devices, scratch space
+# (checked after resolving symlinks) and system bin dirs (by prefix only,
+# since e.g. Homebrew's bin entries are symlinks into its Cellar).
+_DEV_FILES = {"/dev/null", "/dev/stdout", "/dev/stderr", "/dev/tty"}
+_BIN_DIRS = ("/usr/bin", "/bin", "/usr/local/bin", "/opt/homebrew/bin")
+_TMP_DIRS = ("/tmp", "/private/tmp")
+_SHELL_PUNCT = set(";&|()<>")
 
 
 def _secret_path(p, wt):
@@ -179,14 +223,49 @@ def _check_path(value, wt):
         return "path can't be resolved"
     if not _inside(p, wt):
         return "{} is outside the worktree".format(value)
+    if ".git" in p.relative_to(wt).parts:
+        return "the worktree's .git is off limits"
     if _secret_path(p, wt):
         return "{} looks like a secret file".format(value)
     return None
 
 
-def _guard_bash(cmd):
+def _allowed_outside(tok):
+    norm = os.path.normpath(tok)
+    if norm in _DEV_FILES:
+        return True
+    if any(norm == d or norm.startswith(d + "/") for d in _BIN_DIRS):
+        return True
+    try:
+        p = Path(norm).resolve()
+        tmps = [Path(d).resolve() for d in _TMP_DIRS]
+    except (OSError, RuntimeError):
+        return False
+    return any(_inside(p, t) for t in tmps)
+
+
+def _check_token_path(tok, wt):
+    if tok.startswith("/") and _allowed_outside(tok):
+        return None
+    return _check_path(tok, wt)
+
+
+def _pathish(tok):
+    return tok.startswith(("/", "~")) or ".." in tok.split("/") or tok == ".git" or tok.startswith(".git/")
+
+
+def _tokens(cmd):
+    lex = shlex.shlex(cmd, posix=True, punctuation_chars=True)
+    lex.whitespace_split = True
+    lex.commenters = ""
+    return list(lex)
+
+
+def _guard_bash(cmd, wt, depth=0):
     if not isinstance(cmd, str) or not cmd.strip():
         return "missing command"
+    if depth > 3:
+        return "too deeply nested"
     for rx, why in _BASH_DENY:
         if rx.search(cmd):
             return why
@@ -194,6 +273,39 @@ def _guard_bash(cmd):
         return "pip installs only into the worktree's .venv (use uv or .venv/bin/pip)"
     if _SECRET_IN_CMD.search(cmd):
         return "commands touching secret files aren't allowed"
+    try:
+        toks = _tokens(cmd)
+    except ValueError:
+        return "I can't parse that command"
+    for i, tok in enumerate(toks):
+        nxt = toks[i + 1] if i + 1 < len(toks) else None
+        if tok in ("cd", "pushd"):
+            if nxt is None or nxt[0] in _SHELL_PUNCT or nxt == "-":
+                return "cd must name a folder inside the worktree"
+            why = _check_path(nxt, wt)
+            if why:
+                return why
+        if tok in ("sh", "bash", "zsh") and nxt == "-c" and i + 2 < len(toks):
+            why = _guard_bash(toks[i + 2], wt, depth + 1)
+            if why:
+                return why
+        if tok == "eval":
+            rest = []
+            for t in toks[i + 1:]:
+                if t and t[0] in _SHELL_PUNCT:
+                    break
+                rest.append(t)
+            why = _guard_bash(" ".join(rest), wt, depth + 1)
+            if why:
+                return why
+        cands = [tok]
+        if "=" in tok:
+            cands.append(tok.split("=", 1)[1])
+        for c in cands:
+            if c and _pathish(c):
+                why = _check_token_path(c, wt)
+                if why:
+                    return why
     return None
 
 
@@ -205,7 +317,7 @@ def guard(tool_name, tool_input, worktree):
         return "worktree can't be resolved"
     args = tool_input if isinstance(tool_input, dict) else {}
     if tool_name == "Bash":
-        return _guard_bash(args.get("command"))
+        return _guard_bash(args.get("command"), wt)
     if tool_name not in _FILE_TOOLS and tool_name not in _SEARCH_TOOLS:
         return "{} isn't allowed for coding agents".format(tool_name)
     present = [k for k in _PATH_KEYS if k in args and args[k] is not None]
@@ -248,8 +360,43 @@ def _get(task_id):
     return dict(r) if r else None
 
 
+def _alive(task_id):
+    t = _threads.get(task_id)
+    return t is not None and t.is_alive()
+
+
 def _running_count(conn):
-    return conn.execute("SELECT COUNT(*) FROM dev_tasks WHERE state = 'running'").fetchone()[0]
+    """Running rows plus agents whose thread hasn't exited yet (a cancelled
+    agent keeps running until it notices the stop)."""
+    ids = {r[0] for r in conn.execute("SELECT id FROM dev_tasks WHERE state = 'running'")}
+    ids |= {tid for tid in list(_threads) if _alive(tid)}
+    return len(ids)
+
+
+def _send(event):
+    try:
+        hud_bridge.send(event)
+    except Exception:  # noqa: BLE001 — a broken HUD must never break a task
+        pass
+
+
+def _announce(text):
+    try:
+        hud_bridge.announce("devtask", text, speak=True)
+    except Exception:  # noqa: BLE001
+        pass
+
+
+def _fail(task, reason):
+    """Mark a running task failed and tell the user; quiet if it already ended."""
+    try:
+        changed = _finish(task["id"], state="failed", finished_at=_now(), summary=reason)
+    except Exception:  # noqa: BLE001 — db trouble: still tell the user
+        changed = True
+    if changed:
+        _send({"type": "devtask", "id": task["id"], "state": "failed", "last_step": None})
+        _announce("{} agent failed: {}".format(task["project"], reason))
+    return changed
 
 
 def rows(today_only=False):
@@ -310,45 +457,31 @@ def _work(task):
             _update(tid, last_step=step)
         except Exception:  # noqa: BLE001 — progress must never kill the task
             pass
-        hud_bridge.send({"type": "devtask", "id": tid, "state": "running", "last_step": step})
+        _send({"type": "devtask", "id": tid, "state": "running", "last_step": step})
 
     ended = False
     try:
         result = RUNNER(dict(task), on_step, stop.is_set) or {}
         stat, n = _diffstat(task)
-        if stop.is_set():
-            _update(tid, diffstat=stat)
-            ended = True
-            return
         summary = str(result.get("summary") or "").strip()[:2000]
+        cost = float(result.get("cost_usd") or 0)
         ended = True
-        if not _finish(tid, state="done", finished_at=_now(), summary=summary, diffstat=stat,
-                       cost_usd=float(result.get("cost_usd") or 0)):
+        if stop.is_set() or not _finish(tid, state="done", finished_at=_now(), summary=summary,
+                                        diffstat=stat, cost_usd=cost):
             _update(tid, diffstat=stat)   # cancelled meanwhile: keep that state
             return
-        hud_bridge.send({"type": "devtask", "id": tid, "state": "done", "last_step": None})
-        hud_bridge.announce("devtask", "{} agent finished: {} {} files changed on branch {}.".format(
-            task["project"], summary, n, task["branch"]), speak=True)
-    except Exception as exc:  # noqa: BLE001 — every failure ends the task as failed
-        reason = str(exc)[:300] or exc.__class__.__name__
-        if stop.is_set():
-            ended = True
-            return
-        try:
-            changed = _finish(tid, state="failed", finished_at=_now(), summary=reason)
-            ended = True
-        except Exception:  # noqa: BLE001 — db trouble: still tell the user it failed
-            changed = True
-        if changed:   # False means it was cancelled meanwhile: stay quiet
-            hud_bridge.send({"type": "devtask", "id": tid, "state": "failed", "last_step": None})
-            hud_bridge.announce("devtask", "{} agent failed: {}".format(task["project"], reason),
-                                speak=True)
+        _send({"type": "devtask", "id": tid, "state": "done", "last_step": None})
+        _announce("{} agent finished: {} {} files changed on branch {}.".format(
+            task["project"], summary, n, task["branch"]))
+    except BaseException as exc:  # noqa: BLE001 — incl. asyncio.CancelledError from timeouts
+        ended = True
+        if not stop.is_set():
+            _fail(task, str(exc)[:300] or exc.__class__.__name__)
+        if isinstance(exc, (KeyboardInterrupt, SystemExit)):
+            raise
     finally:
         if not ended and not stop.is_set():
-            try:
-                _finish(tid, state="failed", finished_at=_now(), summary="agent ended unexpectedly")
-            except Exception:  # noqa: BLE001
-                pass
+            _fail(task, "agent ended unexpectedly")
 
 
 # ── tools ────────────────────────────────────────────────────────────
@@ -391,21 +524,30 @@ def start(project, instruction, _confirmed=False):
                       "worktree, state, started_at, last_step) VALUES (?, ?, ?, ?, ?, ?, ?, 'running', ?, ?)",
                       (tid, name, str(repo), instruction, branch, base, str(wt), _now(), "Creating worktree"))
 
+    # From here on the row says running: any error must end it as failed.
     try:
         wt.parent.mkdir(parents=True, exist_ok=True)
         _git(repo, "worktree", "add", "-q", "-b", branch, str(wt), base)
     except Exception as e:  # noqa: BLE001
         reason = str(e)[:300]
-        _update(tid, state="failed", finished_at=_now(), summary=reason)
+        _finish(tid, state="failed", finished_at=_now(), summary=reason)
         return "I couldn't create the worktree for {}: {}".format(name, reason)
-
-    _update(tid, last_step="Starting agent")
-    task = _get(tid)
-    _stops[tid] = threading.Event()
-    t = threading.Thread(target=_work, args=(task,), name="devtask-" + tid, daemon=True)
-    _threads[tid] = t
-    t.start()
-    hud_bridge.send({"type": "devtask", "id": tid, "state": "running", "last_step": "Starting agent"})
+    try:
+        _update(tid, last_step="Starting agent")
+        task = _get(tid)
+        _stops[tid] = threading.Event()
+        t = threading.Thread(target=_work, args=(task,), name="devtask-" + tid, daemon=True)
+        _threads[tid] = t
+        t.start()
+    except Exception as e:  # noqa: BLE001
+        _threads.pop(tid, None)
+        reason = str(e)[:300] or e.__class__.__name__
+        try:
+            _finish(tid, state="failed", finished_at=_now(), summary=reason)
+        except Exception:  # noqa: BLE001
+            pass
+        return "I couldn't start the agent for {}: {}".format(name, reason)
+    _send({"type": "devtask", "id": tid, "state": "running", "last_step": "Starting agent"})
     return "Started task {} in {} on branch {}. I'll tell you when it's done.".format(tid, name, branch)
 
 
@@ -464,7 +606,7 @@ def cancel(task_id, _confirmed=False):
         ev.set()
     if not _finish(r["id"], state="cancelled", finished_at=_now()):
         return "Task {} already finished.".format(r["id"])
-    hud_bridge.send({"type": "devtask", "id": r["id"], "state": "cancelled", "last_step": None})
+    _send({"type": "devtask", "id": r["id"], "state": "cancelled", "last_step": None})
     return "Stopped task {}. The worktree and branch {} are kept.".format(r["id"], r["branch"])
 
 
@@ -474,6 +616,8 @@ def cleanup(task_id, _confirmed=False):
         return "No coding task {}.".format(task_id)
     if r["state"] == "running":
         return "Task {} is still running; cancel it first.".format(r["id"])
+    if _alive(r["id"]):
+        return "Task {}'s agent is still stopping; try again in a moment.".format(r["id"])
     wt = Path(r["worktree"] or "")
     try:
         wt_r = wt.resolve()

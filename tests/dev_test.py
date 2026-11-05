@@ -193,6 +193,42 @@ for c in ("npm install", "uv sync", "python -m pytest", "git commit -am x", "git
     check("bash allowed: " + c, G("Bash", {"command": c}, wt) is None)
 check("bash without a command denied", G("Bash", {}, wt) is not None)
 
+print("== guard: review round 1 bypasses ==")
+A = str(alpha)
+for c in (
+    # 1. git options before the subcommand, other repos, env redirection
+    "git -c a=b push origin HEAD", "git --no-pager push", "git -c x=y -C {} checkout -b evil".format(A),
+    "GIT_DIR=/x/.git git status", "GIT_WORK_TREE=/x git add .", "GIT_INDEX_FILE=/x/i git add .",
+    "git --git-dir=/x/.git log", "git --work-tree=/x status", "git -p remote -v",
+    # 2. writes to the shared .git
+    "git update-ref refs/heads/main HEAD", "git symbolic-ref HEAD refs/heads/main",
+    "git branch -D main", "git branch -d old", "git branch -f main HEAD", "git branch -m main x",
+    "git branch -M x", "git branch --delete x", "git branch --force main HEAD", "git branch --move a b",
+    "git stash drop", "git stash clear", "git tag -d v1", "git config core.hooksPath hooks",
+    "git -c a=b config --global user.name x", "git reflog expire --all", "git gc --prune=now",
+    "git send-pack /x main", "git http-push http://x main",
+    # 3. leaving the worktree via cd / absolute paths / .. / redirects
+    "cd {} && git checkout -b evil".format(A), "echo x > {}/x.py".format(A), "cd ../../ && rm -rf apps",
+    "cat ../../secret.txt", "cp a.py ~/x.py", "pushd /", "cd", "cd -", "echo x >> /Users/x/y",
+    "ls --dir=/etc", "cat /tmp/../etc/passwd", "bash -c 'cd / && ls'", "eval 'cd /'",
+    "echo 'unterminated", "echo x > .git",
+    # 4. gh
+    "gh pr create --fill", "gh repo delete x",
+    # 9. rm flag order / case
+    "rm -Rf ~", "rm -r -f /", "rm -fr ~/", "rm -rf $HOME", "rm -rf ${HOME}",
+):
+    check("bash denied: " + c, G("Bash", {"command": c}, wt) is not None)
+(Path("/tmp") / "jarvis-dev-test-link").unlink(missing_ok=True)
+(Path("/tmp") / "jarvis-dev-test-link").symlink_to("/etc")
+check("bash denied: /tmp symlink escape", G("Bash", {"command": "cat /tmp/jarvis-dev-test-link/hosts"}, wt) is not None)
+(Path("/tmp") / "jarvis-dev-test-link").unlink()
+for c in ("git config --get user.name", "git config --list", "git branch", "git branch --list 'jarvis/*'",
+          "git branch new-thing", "git log --oneline -5", "cd src && ls", "python -m pytest 2>/dev/null",
+          "ls > /tmp/out.txt", "/usr/bin/env python -V", "/opt/homebrew/bin/node -v", "echo hi >/dev/stderr",
+          "git diff HEAD~1", "npm run build && npm test", "git commit -m 'fix the push button'"):
+    check("bash allowed: " + c, G("Bash", {"command": c}, wt) is None)
+check("file tool writing .git denied", G("Write", {"file_path": str(wt / ".git")}, wt) is not None)
+
 print("== cap ==")
 config.DEV_AGENT_MAX_RUNNING = 1
 release = threading.Event()
@@ -217,7 +253,80 @@ check("cleanup refuses a running task", "running" in dev.cleanup(tid4, _confirme
 release.set()
 dev._threads[tid4].join(10)
 check("blocking task done after release", row(tid4)["state"] == "done")
+
+print("== cap counts agents still stopping after cancel ==")
+hold = threading.Event()
+
+
+def stubborn(task, on_step, should_stop):
+    hold.wait(10)          # ignores should_stop for a while
+    return {"summary": "Late.", "cost_usd": 0}
+
+
+dev.RUNNER = stubborn
+tid6 = task_id_from(dev.start("alpha", "stubborn one", _confirmed=True))
+dev.cancel(tid6, _confirmed=True)
+check("cancelled row, thread still alive", row(tid6)["state"] == "cancelled" and dev._threads[tid6].is_alive())
+check("start refused while a cancelled agent still runs",
+      "already running" in dev.start("alpha", "sneak past cap", _confirmed=True))
+check("cleanup refused while its thread is alive", "still" in dev.cleanup(tid6, _confirmed=True)
+      and Path(row(tid6)["worktree"]).exists())
+hold.set()
+dev._threads[tid6].join(10)
+check("cancelled stays cancelled after thread exits", row(tid6)["state"] == "cancelled")
+dev.RUNNER = fake_runner
+t7 = task_id_from(dev.start("alpha", "after the stubborn one", _confirmed=True))
+check("start allowed once the thread exited", t7 is not None)
+dev._threads[t7].join(10)
 config.DEV_AGENT_MAX_RUNNING = 2
+
+print("== BaseException, start errors, HUD errors ==")
+import asyncio  # noqa: E402
+
+
+def cancelled_runner(task, on_step, should_stop):
+    raise asyncio.CancelledError()
+
+
+dev.RUNNER = cancelled_runner
+n_ann = len(announced)
+t8 = task_id_from(dev.start("alpha", "get cancelled by asyncio", _confirmed=True))
+dev._threads[t8].join(10)
+fails = [a for a in announced[n_ann:] if "failed" in a[1]]
+check("CancelledError -> failed", row(t8)["state"] == "failed")
+check("CancelledError announced once as failed", len(fails) == 1 and len(announced) == n_ann + 1)
+check("CancelledError sends a failed HUD event",
+      any(e.get("id") == t8 and e.get("state") == "failed" for e in hud_events))
+
+real_thread = threading.Thread
+
+
+class NoStart(real_thread):
+    def start(self):
+        raise RuntimeError("can't start new thread")
+
+
+dev.threading.Thread = NoStart
+try:
+    out = dev.start("alpha", "thread wont start", _confirmed=True)
+finally:
+    dev.threading.Thread = real_thread
+bad = [r for r in dev.rows() if r["instruction"] == "thread wont start"]
+check("start error after insert fails the row", len(bad) == 1 and bad[0]["state"] == "failed"
+      and "can't start" in out)
+
+dev.RUNNER = fake_runner
+
+
+def broken_sink(e):
+    raise RuntimeError("hud down")
+
+
+hud_bridge.attach(broken_sink)
+t9 = task_id_from(dev.start("alpha", "with a broken hud", _confirmed=True))
+dev._threads[t9].join(10)
+hud_bridge.attach(lambda e: hud_events.append(e) or True)
+check("HUD sink error doesn't kill the task", row(t9)["state"] == "done" and row(t9)["last_step"] == "Write hello.txt")
 
 print("== cancel ==")
 release2 = threading.Event()
