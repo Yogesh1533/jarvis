@@ -731,6 +731,52 @@ TOOL_SCHEMAS = [
         },
     },
     {
+        "name": "dev_task_start",
+        "description": (
+            "Start a background coding agent in one of the user's repos, in its own git "
+            "worktree and branch. Always asks the user first."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "project": {"type": "string", "description": "Project or repo folder name"},
+                "instruction": {"type": "string", "description": "What the agent should change"},
+            },
+            "required": ["project", "instruction"],
+        },
+    },
+    {
+        "name": "dev_task_status",
+        "description": "Status of a coding task (the latest if no id is given).",
+        "input_schema": {
+            "type": "object",
+            "properties": {"task_id": {"type": "string"}},
+        },
+    },
+    {
+        "name": "dev_task_list",
+        "description": "List today's and running coding tasks.",
+        "input_schema": {"type": "object", "properties": {}},
+    },
+    {
+        "name": "dev_task_cancel",
+        "description": "Stop a running coding task. Its worktree and branch are kept.",
+        "input_schema": {
+            "type": "object",
+            "properties": {"task_id": {"type": "string"}},
+            "required": ["task_id"],
+        },
+    },
+    {
+        "name": "dev_task_cleanup",
+        "description": "Remove a finished coding task's worktree folder. The branch is kept.",
+        "input_schema": {
+            "type": "object",
+            "properties": {"task_id": {"type": "string"}},
+            "required": ["task_id"],
+        },
+    },
+    {
         "name": "projects_status",
         "description": (
             "Status of the user's coding projects from their Projects dashboard "
@@ -898,7 +944,7 @@ def _handlers():
     # Imported lazily so text mode starts even if e.g. Google libs are
     # missing; a broken dependency surfaces as a tool error, not a crash.
     from . import (
-        apple, briefing, files, gcal, gmail, hud, mac, media, memory, persona,
+        apple, briefing, dev, files, gcal, gmail, hud, mac, media, memory, persona,
         prep, projects, recall, reminders, screen, skills, system, tasks, timers, vault,
         weather, websearch,
     )
@@ -964,6 +1010,11 @@ def _handlers():
         "vault_read": vault.read,
         "vault_note": vault.note,
         "projects_status": projects.status,
+        "dev_task_start": dev.start,
+        "dev_task_status": dev.status,
+        "dev_task_list": dev.list_tasks,
+        "dev_task_cancel": dev.cancel,
+        "dev_task_cleanup": dev.cleanup,
         "voice_set_mood": persona.set_mood,
         "voice_set_voice": persona.set_voice,
         "assistant_set_model": persona.set_model,

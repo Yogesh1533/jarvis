@@ -40,6 +40,22 @@ CREATE TABLE IF NOT EXISTS embeddings (
     created_at TEXT NOT NULL DEFAULT (datetime('now', 'localtime')),
     UNIQUE (kind, ref)
 );
+CREATE TABLE IF NOT EXISTS dev_tasks (
+    id TEXT PRIMARY KEY,
+    project TEXT NOT NULL,
+    repo_path TEXT NOT NULL,
+    instruction TEXT NOT NULL,
+    branch TEXT NOT NULL,
+    base_sha TEXT,
+    worktree TEXT,
+    state TEXT NOT NULL,
+    started_at TEXT NOT NULL,
+    finished_at TEXT,
+    last_step TEXT,
+    summary TEXT,
+    diffstat TEXT,
+    cost_usd REAL
+);
 """
 
 
