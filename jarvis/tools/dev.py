@@ -568,6 +568,9 @@ def _snapshot(task):
          _git(task["repo_path"], "rev-parse", "--show-object-format").strip(), str(snap),
          strict=True)
     src = gd / "objects"
+    # os.walk lists a symlinked top dir anyway; never copy from outside the clone.
+    if src.is_symlink() or not src.is_dir():
+        raise RuntimeError("the agent's clone has a bad .git/objects")
     for dirpath, dirnames, filenames in os.walk(src, followlinks=False):
         rel = Path(dirpath).relative_to(src)
         if rel.parts and rel.parts[0] == "info":
