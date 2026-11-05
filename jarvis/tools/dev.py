@@ -623,6 +623,10 @@ def sdk_runner(task, on_step, should_stop):
 
     import claude_agent_sdk as sdk
 
+    shadowed = getattr(sdk, "CanUseToolShadowedWarning", None)
+    if shadowed is not None:   # expected: the PreToolUse hook is the real gate
+        import warnings
+        warnings.filterwarnings("ignore", category=shadowed)
     options = agent_options(task, sdk)
     timeout = float(config.DEV_AGENT_TIMEOUT_MIN) * 60
 

@@ -229,6 +229,12 @@ at once. `dev_task_cancel` stops an agent and keeps its branch;
    and this worktree's admin dir). The main checkout, other branches, git
    config and hooks are read-only to it. Network is limited to the package
    registries and GitHub (`REGISTRY_DOMAINS`) so installs work.
+   Checked with a real run: a commit from the worktree succeeds, and
+   `python3 -c "open('../../<main checkout>/PWNED','w')"` (which the guard
+   doesn't catch) fails with "Operation not permitted". The sandbox lets
+   Bash write the temp dirs, so a repo under `/tmp` isn't protected; keep
+   `DEV_ROOTS` out of `/tmp`. File tools (Edit, Write) aren't sandboxed;
+   the guard alone keeps them in the worktree.
 4. Jarvis's own secret env vars (`*_KEY`, `*_TOKEN`, ...) are blanked in the
    agent's environment.
 
@@ -252,6 +258,11 @@ matching, and a determined agent gets around it. Residual bypasses:
   running or merging it;
 - `git` writes allowed into the shared object store and `jarvis/*` refs
   could touch another agent's branch.
+- the Claude CLI process itself is not sandboxed: it writes its own
+  bookkeeping (`.claude/.cc-writes`) into the main checkout, and it appears
+  to still read `~/.claude/CLAUDE.md` (the test agent followed its
+  `cd X || exit` rule; instructions only: user settings, hooks,
+  plugins, skills and MCP servers stay off).
 
 Nothing is merged or pushed: the work sits on its branch for review.
 
