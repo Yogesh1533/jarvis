@@ -448,6 +448,8 @@ fake.PermissionResultDeny = _Deny
 fake.HookMatcher = _Matcher
 sys.modules["claude_agent_sdk"] = fake
 os.environ["JARVIS_FAKE_API_KEY"] = "do-not-leak"
+os.environ["CLAUDE_CODE_OAUTH_TOKEN"] = "do-not-leak-either"
+(alpha / ".env.local").write_text("FAKE=1\n")
 dev._nearby = lambda: False
 
 dev.RUNNER = dev.sdk_runner
@@ -481,14 +483,20 @@ check("sdk: prompt streamed as one user message with the instruction",
       and seen["prompt"][0]["message"]["content"] == "edit the readme")
 check("sdk: OS sandbox on, no unsandboxed escape",
       o.sandbox["enabled"] is True and o.sandbox["allowUnsandboxedCommands"] is False)
-common = Path(git(alpha, "rev-parse", "--path-format=absolute", "--git-common-dir")).resolve()
-allow_w = [Path(p) for p in o.sandbox["filesystem"]["allowWrite"]]
-check("sdk: sandbox may write only git's object/ref/worktree dirs, not the whole .git",
-      common not in allow_w and all(common in p.parents for p in allow_w)
-      and (common / "objects") in allow_w and (common / "worktrees" / Path(wt_s).name) in allow_w)
+fsx = o.sandbox["filesystem"]
+check("sdk: sandbox writes only the clone", fsx["allowWrite"] == [wt_s])
+check("sdk: sandbox denies writes to the clone's .claude, .git/config and hooks",
+      all(str(Path(wt_s) / x) in fsx["denyWrite"] for x in (".claude", ".git/config", ".git/hooks")))
+HOME = Path.home()
+need_deny = [HOME / ".secrets", HOME / ".ssh", HOME / "Library" / "Keychains", HOME / ".aws",
+             HOME / ".config" / "gh", config.ROOT / ".env", config.ROOT / "credentials.json",
+             config.ROOT / "data", alpha.resolve() / ".env.local"]
+check("sdk: sandbox denies reads of secrets, Jarvis's .env/data and the repo's .env files",
+      all(str(x) in fsx["denyRead"] for x in need_deny))
 check("sdk: package registries reachable", "registry.npmjs.org" in o.sandbox["network"]["allowedDomains"]
       and "pypi.org" in o.sandbox["network"]["allowedDomains"])
-check("sdk: secret-looking env vars blanked for the agent", o.env.get("JARVIS_FAKE_API_KEY") == "")
+check("sdk: secret-looking env vars blanked for the agent", o.env.get("JARVIS_FAKE_API_KEY") == ""
+      and o.env.get("CLAUDE_CODE_OAUTH_TOKEN") == "")
 check("sdk: can_use_tool set", callable(o.can_use_tool))
 deny_c = asyncio.run(o.can_use_tool("Bash", {"command": "git push origin HEAD"}, None))
 allow_c = asyncio.run(o.can_use_tool("Read", {"file_path": "README.md"}, None))
@@ -582,5 +590,119 @@ dev._threads[tc].join(10)
 check("cancel stops the SDK loop", not dev._threads[tc].is_alive() and row(tc)["state"] == "cancelled")
 check("cancel not announced as failure", not any("failed" in a[1] for a in announced[n_ann:]))
 check("Bash step shown as the command", (row(tc)["last_step"] or "").startswith("Bash echo"))
+
+print("== clone design ==")
+dev.RUNNER = fake_runner
+tcl = task_id_from(dev.start("alpha", "clone layout", _confirmed=True))
+dev._threads[tcl].join(10)
+rc = row(tcl)
+cl = Path(rc["worktree"])
+check("clone: standalone .git dir with alternates, not a worktree",
+      (cl / ".git").is_dir() and (cl / ".git" / "objects" / "info" / "alternates").is_file()
+      and not (cl / ".git" / "commondir").exists())
+check("clone: origin removed", git(cl, "remote") == "")
+check("clone: on the task branch", git(cl, "rev-parse", "--abbrev-ref", "HEAD") == rc["branch"])
+check("clone: branch imported into the main repo at the clone's commit",
+      git(alpha, "rev-parse", "refs/heads/" + rc["branch"]) == git(cl, "rev-parse", "HEAD"))
+check("clone: main repo has no extra worktrees and no .claude dir",
+      len(git(alpha, "worktree", "list").splitlines()) == 1 and not (alpha / ".claude").exists())
+check("clone: no snapshot dirs left behind", not list((DEV / ".jarvis-worktrees").glob(".snapshot-*")))
+check("clone: commit list stored", "Add hello" in (rc["commits"] or ""))
+
+
+def commit_then_crash(task, on_step, should_stop):
+    fake_runner(task, on_step, should_stop)
+    raise RuntimeError("crashed after committing")
+
+
+dev.RUNNER = commit_then_crash
+tcf = task_id_from(dev.start("alpha", "commit then crash", _confirmed=True))
+dev._threads[tcf].join(10)
+rf = row(tcf)
+check("failed task: branch still imported with diffstat", rf["state"] == "failed"
+      and git(alpha, "branch", "--list", rf["branch"]) and "hello.txt" in (rf["diffstat"] or ""))
+
+hold2 = threading.Event()
+
+
+def commit_then_wait(task, on_step, should_stop):
+    fake_runner(task, on_step, should_stop)
+    hold2.wait(10)
+    return {"summary": "x", "cost_usd": 0}
+
+
+dev.RUNNER = commit_then_wait
+tcc = task_id_from(dev.start("alpha", "commit then get cancelled", _confirmed=True))
+_time.sleep(0.5)
+dev.cancel(tcc, _confirmed=True)
+hold2.set()
+dev._threads[tcc].join(10)
+check("cancelled task: branch imported", row(tcc)["state"] == "cancelled"
+      and git(alpha, "branch", "--list", row(tcc)["branch"]) != "")
+
+print("== reviewer's escape: agent plants git config / commondir / hooks ==")
+PWN = root / "PWNED"
+evil = root / "evil"
+evil.mkdir()
+(evil / "config").write_text("[core]\n\tfsmonitor = touch {}\n".format(PWN))
+
+
+def plant(task, on_step, should_stop):
+    wtp = Path(task["worktree"])
+    (wtp / ".gitattributes").write_text("* filter=pwn\n")
+    git(wtp, "add", ".gitattributes")
+    git(wtp, "commit", "-q", "-m", "attrs")
+    fake_runner(task, on_step, should_stop)
+    g = wtp / ".git"
+    with open(g / "config", "a") as f:
+        f.write("[core]\n\tfsmonitor = touch {0}\n[filter \"pwn\"]\n\tclean = touch {0}\n"
+                "\tsmudge = touch {0}\n[core]\n\talternateRefsCommand = touch {0}\n".format(PWN))
+    (g / "commondir").write_text(str(evil) + "\n")
+    hook = g / "hooks" / "post-checkout"
+    hook.write_text("#!/bin/sh\ntouch {}\n".format(PWN))
+    hook.chmod(0o755)
+    return {"summary": "Planted.", "cost_usd": 0}
+
+
+git_calls = []
+_real_run = subprocess.run
+
+
+def recording_run(args, *a, **kw):
+    if sys._getframe(1).f_globals.get("__name__") == "jarvis.tools.dev" and args and args[0] == "git":
+        git_calls.append(list(args))
+    return _real_run(args, *a, **kw)
+
+
+subprocess.run = recording_run
+try:
+    dev.RUNNER = plant
+    tp = task_id_from(dev.start("alpha", "plant traps", _confirmed=True))
+    dev._threads[tp].join(10)
+    rp = row(tp)
+    check("planted: task still done and branch imported", rp["state"] == "done"
+          and git(alpha, "branch", "--list", rp["branch"]) != "")
+    out_c = dev.cleanup(tp, _confirmed=True)
+    check("planted: cleanup removes the clone", not Path(rp["worktree"]).exists())
+finally:
+    subprocess.run = _real_run
+check("planted: nothing the agent planted ran (no PWNED)", not PWN.exists())
+check("every git call Jarvis made carries fsmonitor/hooksPath overrides",
+      git_calls and all("core.fsmonitor=false" in c and "core.hooksPath=/dev/null" in c for c in git_calls))
+check("planted: branch kept after cleanup", git(alpha, "branch", "--list", rp["branch"]) != "")
+
+print("== cleanup refuses uncommitted work ==")
+dev.RUNNER = fake_runner
+tu = task_id_from(dev.start("alpha", "leave a mess", _confirmed=True))
+dev._threads[tu].join(10)
+cu = Path(row(tu)["worktree"])
+(cu / "README.md").write_text("edited but not committed\n")
+check("cleanup refuses a clone with uncommitted changes", "uncommitted" in dev.cleanup(tu, _confirmed=True)
+      and cu.exists())
+(cu / ".claude").mkdir(exist_ok=True)
+(cu / ".claude" / ".cc-writes").write_text("x")
+git(cu, "checkout", "--", "README.md")
+check("CLI bookkeeping in .claude/ doesn't block cleanup",
+      "Removed" in dev.cleanup(tu, _confirmed=True) and not cu.exists())
 
 print("ALL {} CHECKS PASSED".format(len(PASS)))

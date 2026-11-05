@@ -1,29 +1,34 @@
-"""Background coding agents in git worktrees (dev_task_* tools).
+"""Background coding agents in standalone git clones (dev_task_* tools).
 
-Each task gets its own branch `jarvis/<slug>-<id>` and worktree under
-`<first DEV_ROOT>/.jarvis-worktrees/<project>-<id>`, cut from the repo's
-current HEAD with `git worktree add`, so the main checkout's files and branch
-are never touched. Starting, cancelling and cleaning up always confirm.
+Each task gets its own branch `jarvis/<slug>-<id>` in its own clone at
+`<first DEV_ROOT>/.jarvis-worktrees/<project>-<id>` (the DB still calls it
+`worktree`): `git clone --shared --no-checkout`, `origin` removed, then the
+branch is checked out at the repo's current HEAD. The clone borrows the
+repo's objects read-only through alternates and has its own .git, so the
+main checkout's files, branch, refs, config and object store are never
+written by the agent. Starting, cancelling and cleaning up always confirm.
 
-`RUNNER` does the actual agent work: `sdk_runner` drives the Claude Agent
-SDK (tests swap in a fake). `guard()` is the per-tool-call path and command
-check; the SDK runner enforces it through a PreToolUse hook (which also runs
-for auto-approved calls) and again in `can_use_tool`. File tools must stay inside the worktree.
-Bash commands are matched against deny rules (git commands that reach a
-remote or the shared .git, gh, ssh, sudo, global installs, secrets) and
-every cd target / absolute / `~` / `..` token must resolve inside the
-worktree (or a small allow-list: /dev/null, /tmp, system bin dirs).
+`RUNNER` does the agent work: `sdk_runner` drives the Claude Agent SDK
+(tests swap in a fake). Its Bash runs in the OS sandbox with writes limited
+to the clone (minus its .claude/ and .git/config and hooks) and reads of
+secrets denied. `guard()` is the per-tool-call path and command check,
+enforced through a PreToolUse hook (which also fires for auto-approved
+calls) and again in `can_use_tool`. It is best-effort string matching:
+command substitution, variables, scripts and `subprocess` get around it.
+The confirmation, the clone and the sandbox are the real boundary.
 
-This is best-effort string matching. Known residual bypasses: command
-substitution (`bash -c "$(...)"`), variables, writing a script and running
-it, and python/node `subprocess`. The confirmation gate, worktree isolation
-and the SDK's OS sandbox for Bash (writes limited to the worktree plus the
-git dirs a commit needs) are the real boundary.
+When the agent ends (done, failed or cancelled), Jarvis brings its branch
+into the main repo itself: it copies the clone's objects and branch ref
+into a private snapshot git dir that it writes (never trusting the clone's
+.git config, commondir or hooks) and fetches from that. Every git call
+Jarvis makes passes `-c core.fsmonitor=false -c core.hooksPath=/dev/null`.
 
 Config is read at call time.
 """
 import os
 import re
+import shutil
+import warnings
 import secrets as _rand
 import shlex
 import subprocess
@@ -36,6 +41,13 @@ from . import ConfirmationRequired, db, projects
 
 WORKTREES = ".jarvis-worktrees"
 _GIT_TIMEOUT = 60
+# Never let a repo's config run programs when Jarvis itself calls git.
+SAFE_GIT = ("-c", "core.fsmonitor=false", "-c", "core.hooksPath=/dev/null")
+_SHA = re.compile(r"^[0-9a-f]{40}([0-9a-f]{24})?$")
+
+# The PreToolUse hook is the real gate, so can_use_tool being shadowed by
+# allowed_tools is expected.
+warnings.filterwarnings("ignore", message=r"can_use_tool will not be invoked")
 
 _lock = threading.Lock()      # cap check + row insert are atomic under this
 _threads = {}                 # task id -> worker thread (tests join these)
@@ -71,12 +83,21 @@ def _inside(p, parent):
     return p == parent or parent in p.parents
 
 
-def _git(path, *args):
-    r = subprocess.run(["git", "-C", str(path), *args], capture_output=True, text=True,
-                       timeout=_GIT_TIMEOUT)
+def _git(path, *args, git_dir=None, work_tree=None):
+    cmd = ["git", *SAFE_GIT]
+    if git_dir is not None:
+        cmd += ["--git-dir", str(git_dir), "--work-tree", str(work_tree or path)]
+    r = subprocess.run(cmd + ["-C", str(path), *args], capture_output=True, text=True,
+                       timeout=_GIT_TIMEOUT, env=_git_env())
     if r.returncode != 0:
         raise RuntimeError("git {} failed: {}".format(args[0], (r.stderr or r.stdout).strip()[:200]))
     return r.stdout
+
+
+def _git_env():
+    env = {k: v for k, v in os.environ.items() if not k.startswith("GIT_")}
+    env["GIT_TERMINAL_PROMPT"] = "0"
+    return env
 
 
 def _slug(text):
@@ -424,6 +445,16 @@ def rows(today_only=False):
 
 
 def sweep_stale():
+    """Tasks still `running` died with the last Jarvis: bring back what they
+    committed (best effort), then mark them failed."""
+    with db.connect() as c:
+        stale = [dict(r) for r in c.execute("SELECT * FROM dev_tasks WHERE state = 'running'")]
+    for t in stale:
+        try:
+            stat, _n, commits = _import(t)
+            _update(t["id"], diffstat=stat, commits=commits)
+        except Exception:  # noqa: BLE001 — best effort
+            pass
     with db.connect() as c:
         cur = c.execute("UPDATE dev_tasks SET state = 'failed', summary = 'Jarvis restarted', "
                         "finished_at = ? WHERE state = 'running'", (_now(),))
@@ -457,13 +488,108 @@ def _new_id(repo, slug):
 
 # ── worker ───────────────────────────────────────────────────────────
 
+def _clone_git_dir(clone):
+    """The clone's .git, only if it's a real directory (not a symlink or a
+    `gitdir:` file the agent swapped in)."""
+    g = Path(clone) / ".git"
+    try:
+        if g.is_symlink() or not g.is_dir():
+            return None
+    except OSError:
+        return None
+    return g
+
+
+def _read_ref(git_dir, branch):
+    """sha of refs/heads/<branch> read straight from the files; None if absent."""
+    ref = "refs/heads/" + branch
+    f = git_dir / ref
+    try:
+        if f.is_file() and not f.is_symlink():
+            sha = f.read_text(encoding="ascii", errors="replace").strip()
+            return sha if _SHA.match(sha) else None
+        packed = git_dir / "packed-refs"
+        if packed.is_file() and not packed.is_symlink():
+            for line in packed.read_text(encoding="ascii", errors="replace").splitlines():
+                parts = line.split(" ", 1)
+                if len(parts) == 2 and parts[1].strip() == ref and _SHA.match(parts[0]):
+                    return parts[0]
+    except OSError:
+        return None
+    return None
+
+
+def _snapshot(task, with_index=False):
+    """Copy the clone's objects (+ index) into a fresh git dir Jarvis writes
+    itself, with its own config and the repo's objects as alternates.
+    Returns (snapshot dir, branch sha or None). Nothing from the clone's
+    config, hooks, commondir or info/ is carried over."""
+    clone = Path(task["worktree"])
+    gd = _clone_git_dir(clone)
+    if gd is None:
+        raise RuntimeError("the agent's clone has no usable .git")
+    snap = _worktrees_dir() / ".snapshot-{}".format(task["id"])
+    shutil.rmtree(snap, ignore_errors=True)
+    _git(_worktrees_dir(), "init", "-q", "--bare", "--object-format",
+         _git(task["repo_path"], "rev-parse", "--show-object-format").strip(), str(snap))
+    src = gd / "objects"
+    for dirpath, dirnames, filenames in os.walk(src, followlinks=False):
+        rel = Path(dirpath).relative_to(src)
+        if rel.parts and rel.parts[0] == "info":
+            continue
+        (snap / "objects" / rel).mkdir(parents=True, exist_ok=True)
+        for name in filenames:
+            f = Path(dirpath) / name
+            if f.is_symlink() or not f.is_file():
+                continue
+            shutil.copyfile(f, snap / "objects" / rel / name)
+    main_objects = Path(_git(task["repo_path"], "rev-parse", "--path-format=absolute",
+                             "--git-common-dir").strip()) / "objects"
+    (snap / "objects" / "info").mkdir(parents=True, exist_ok=True)
+    (snap / "objects" / "info" / "alternates").write_text(str(main_objects) + "\n")
+    sha = _read_ref(gd, task["branch"])
+    if sha:
+        _git(snap, "update-ref", "refs/heads/" + task["branch"], sha)
+    if with_index:
+        idx = gd / "index"
+        if idx.is_file() and not idx.is_symlink():
+            shutil.copyfile(idx, snap / "index")
+        if sha:
+            _git(snap, "symbolic-ref", "HEAD", "refs/heads/" + task["branch"])
+    return snap, sha
+
+
+def _main_sha(task):
+    try:
+        return _git(task["repo_path"], "rev-parse", "--verify", "-q",
+                    "refs/heads/{}^{{commit}}".format(task["branch"])).strip() or None
+    except RuntimeError:
+        return None
+
+
 def _diffstat(task):
-    """(diffstat, files changed, commit list) of the branch since its base."""
-    base, br = task["base_sha"], task["branch"]
+    """(diffstat, files changed, commit list) of the branch in the main repo."""
+    if not _main_sha(task):
+        return "", 0, ""
+    base, br = task["base_sha"], "refs/heads/" + task["branch"]
     out = _git(task["repo_path"], "diff", "--stat", "{}...{}".format(base, br)).strip()
     commits = _git(task["repo_path"], "log", "--oneline", "{}..{}".format(base, br)).strip()
     m = re.search(r"(\d+) files? changed", out)
     return out, int(m.group(1)) if m else 0, commits[:4000]
+
+
+def _import(task):
+    """Bring the agent's branch into the main repo (never forced), then
+    -> (diffstat, files changed, commit list)."""
+    snap, sha = _snapshot(task)
+    try:
+        if sha and _main_sha(task) != sha:
+            ref = "refs/heads/" + task["branch"]
+            _git(task["repo_path"], "-c", "protocol.file.allow=always", "fetch", "-q", "--no-tags",
+                 "--no-write-fetch-head", str(snap), "{0}:{0}".format(ref))
+    finally:
+        shutil.rmtree(snap, ignore_errors=True)
+    return _diffstat(task)
 
 
 def _work(task):
@@ -478,29 +604,42 @@ def _work(task):
             pass
         _send({"type": "devtask", "id": tid, "state": "running", "last_step": step})
 
-    ended = False
+    result, error = None, None
     try:
         result = RUNNER(dict(task), on_step, stop.is_set) or {}
-        stat, n, commits = _diffstat(task)
-        summary = str(result.get("summary") or "").strip()[:2000]
-        cost = float(result.get("cost_usd") or 0)
-        ended = True
-        if stop.is_set() or not _finish(tid, state="done", finished_at=_now(), summary=summary,
-                                        diffstat=stat, commits=commits, cost_usd=cost):
-            _update(tid, diffstat=stat, commits=commits)   # cancelled meanwhile: keep that state
-            return
-        _send({"type": "devtask", "id": tid, "state": "done", "last_step": None})
-        _announce("{} agent finished: {} {} files changed on branch {}.".format(
-            task["project"], summary, n, task["branch"]))
     except BaseException as exc:  # noqa: BLE001 — incl. asyncio.CancelledError from timeouts
-        ended = True
+        error = exc
+    try:
+        # Whatever happened, bring back what the agent committed.
+        try:
+            stat, n, commits = _import(task)
+            import_err = None
+        except Exception as exc:  # noqa: BLE001
+            stat, n, commits, import_err = "", 0, "", str(exc)[:200] or exc.__class__.__name__
+        try:
+            if stat or commits:
+                _update(tid, diffstat=stat, commits=commits)
+        except Exception:  # noqa: BLE001
+            pass
+        if stop.is_set():
+            return                      # cancelled: cancel() already set the state
+        if error is not None:
+            _fail(task, str(error)[:300] or error.__class__.__name__)
+        elif import_err:
+            _fail(task, "I couldn't bring the branch back: " + import_err)
+        else:
+            summary = str(result.get("summary") or "").strip()[:2000]
+            cost = float(result.get("cost_usd") or 0)
+            if _finish(tid, state="done", finished_at=_now(), summary=summary, diffstat=stat,
+                       commits=commits, cost_usd=cost):
+                _send({"type": "devtask", "id": tid, "state": "done", "last_step": None})
+                _announce("{} agent finished: {} {} files changed on branch {}.".format(
+                    task["project"], summary, n, task["branch"]))
+    except BaseException as exc:  # noqa: BLE001 — never leave the row running
         if not stop.is_set():
-            _fail(task, str(exc)[:300] or exc.__class__.__name__)
-        if isinstance(exc, (KeyboardInterrupt, SystemExit)):
-            raise
-    finally:
-        if not ended and not stop.is_set():
-            _fail(task, "agent ended unexpectedly")
+            _fail(task, "agent ended unexpectedly: {}".format(exc)[:300])
+    if isinstance(error, (KeyboardInterrupt, SystemExit)):
+        raise error
 
 
 # ── Claude Agent SDK runner ──────────────────────────────────────────
@@ -513,11 +652,10 @@ REGISTRY_DOMAINS = [
     "github.com", "codeload.github.com", "objects.githubusercontent.com",
     "raw.githubusercontent.com",
 ]
-# Env vars blanked for the agent (Jarvis's own .env keys), so `env` in a Bash
-# call can't read them. CLAUDE_CODE_OAUTH_TOKEN is kept: the CLI may need it
-# to log in.
+# Env vars blanked for the agent (Jarvis's own .env keys, any OAuth token),
+# so `env` in a Bash call can't read them.
 _SECRET_ENV = re.compile(r"(KEY|TOKEN|SECRET|PASSWORD|CREDENTIALS?)(_PATH)?$", re.I)
-_KEEP_ENV = {"CLAUDE_CODE_OAUTH_TOKEN"}
+_KEEP_ENV = set()   # the CLI logs in from the keychain; no token needs passing
 
 AGENT_PROMPT = (
     "You're working in a throwaway worktree on branch {branch}. Make the change, run the "
@@ -538,16 +676,34 @@ def _agent_env():
     return {k: "" for k in os.environ if _SECRET_ENV.search(k) and k not in _KEEP_ENV}
 
 
-def _git_write_dirs(worktree):
-    """The dirs a commit from this worktree writes outside it: shared objects,
-    the jarvis/* branch refs and their reflogs, and this worktree's own admin
-    dir (HEAD, index). The rest of the main .git (config, hooks, other
-    branches) stays read-only to sandboxed Bash."""
-    common = Path(_git(worktree, "rev-parse", "--path-format=absolute", "--git-common-dir").strip())
-    admin = Path(_git(worktree, "rev-parse", "--absolute-git-dir").strip())
-    dirs = [common / "objects", common / "refs" / "heads" / "jarvis",
-            common / "logs" / "refs" / "heads" / "jarvis", admin]
-    return [str(d.resolve()) for d in dirs]
+def _deny_reads(task):
+    """Paths sandboxed Bash may not read: Yogesh's keys and Jarvis's secrets,
+    plus the main repo's own .env files."""
+    home = Path.home()
+    out = [home / ".secrets", home / ".ssh", home / "Library" / "Keychains", home / ".aws",
+           home / ".config" / "gh", home / ".gnupg", home / ".netrc",
+           config.ROOT / ".env", config.ROOT / "credentials.json", config.ROOT / "data"]
+    try:
+        out += [p for p in Path(task["repo_path"]).glob(".env*")]
+    except OSError:
+        pass
+    return [str(p) for p in out]
+
+
+def sandbox_settings(task):
+    clone = Path(task["worktree"])
+    return {
+        "enabled": True,
+        "autoAllowBashIfSandboxed": True,
+        "allowUnsandboxedCommands": False,
+        "network": {"allowedDomains": list(REGISTRY_DOMAINS)},
+        "filesystem": {
+            "allowWrite": [str(clone)],
+            "denyWrite": [str(clone / ".claude"), str(clone / ".git" / "config"),
+                          str(clone / ".git" / "hooks")],
+            "denyRead": _deny_reads(task),
+        },
+    }
 
 
 def _deny_output(reason):
@@ -595,13 +751,7 @@ def agent_options(task, sdk):
                        "append": AGENT_PROMPT.format(branch=task["branch"])},
         can_use_tool=can_use_tool,
         hooks={"PreToolUse": [sdk.HookMatcher(matcher=None, hooks=[pre_tool_use])]},
-        sandbox={
-            "enabled": True,
-            "autoAllowBashIfSandboxed": True,
-            "allowUnsandboxedCommands": False,
-            "network": {"allowedDomains": list(REGISTRY_DOMAINS)},
-            "filesystem": {"allowWrite": _git_write_dirs(wt)},
-        },
+        sandbox=sandbox_settings(task),
         env=_agent_env(),
     )
 
@@ -623,10 +773,6 @@ def sdk_runner(task, on_step, should_stop):
 
     import claude_agent_sdk as sdk
 
-    shadowed = getattr(sdk, "CanUseToolShadowedWarning", None)
-    if shadowed is not None:   # expected: the PreToolUse hook is the real gate
-        import warnings
-        warnings.filterwarnings("ignore", category=shadowed)
     options = agent_options(task, sdk)
     timeout = float(config.DEV_AGENT_TIMEOUT_MIN) * 60
 
@@ -725,11 +871,11 @@ def start(project, instruction, _confirmed=False):
     # From here on the row says running: any error must end it as failed.
     try:
         wt.parent.mkdir(parents=True, exist_ok=True)
-        _git(repo, "worktree", "add", "-q", "-b", branch, str(wt), base)
+        _make_clone(repo, wt, branch, base)
     except Exception as e:  # noqa: BLE001
         reason = str(e)[:300]
         _finish(tid, state="failed", finished_at=_now(), summary=reason)
-        return "I couldn't create the worktree for {}: {}".format(name, reason)
+        return "I couldn't create the clone for {}: {}".format(name, reason)
     try:
         _update(tid, last_step="Starting agent")
         task = _get(tid)
@@ -747,6 +893,22 @@ def start(project, instruction, _confirmed=False):
         return "I couldn't start the agent for {}: {}".format(name, reason)
     _send({"type": "devtask", "id": tid, "state": "running", "last_step": "Starting agent"})
     return "Started task {} in {} on branch {}. I'll tell you when it's done.".format(tid, name, branch)
+
+
+def _make_clone(repo, clone, branch, base):
+    """Standalone clone sharing the repo's objects read-only (alternates;
+    never --local, whose hardlinked objects could be edited in place), with
+    no remote, on a new branch at base."""
+    _git(clone.parent, "clone", "-q", "--shared", "--no-checkout", str(repo), str(clone))
+    _git(clone, "remote", "remove", "origin")
+    for key in ("user.name", "user.email"):
+        try:
+            val = _git(repo, "config", "--get", key).strip()
+        except RuntimeError:
+            val = ""
+        if val:
+            _git(clone, "config", key, val)
+    _git(clone, "checkout", "-q", "-b", branch, base)
 
 
 def _elapsed(r):
@@ -808,6 +970,20 @@ def cancel(task_id, _confirmed=False):
     return "Stopped task {}. The worktree and branch {} are kept.".format(r["id"], r["branch"])
 
 
+def _uncommitted(task):
+    """Changed files in the clone, checked through a Jarvis-owned snapshot so
+    nothing in the clone's .git can run code. .claude/ (CLI bookkeeping) is
+    ignored."""
+    snap, sha = _snapshot(task, with_index=True)
+    try:
+        if not sha:
+            return "its branch is missing in the clone"
+        return _git(task["worktree"], "status", "--porcelain", "--", ".", ":(exclude).claude",
+                    git_dir=snap, work_tree=task["worktree"]).strip()
+    finally:
+        shutil.rmtree(snap, ignore_errors=True)
+
+
 def cleanup(task_id, _confirmed=False):
     r = _get(str(task_id).strip())
     if not r:
@@ -818,20 +994,38 @@ def cleanup(task_id, _confirmed=False):
         return "Task {}'s agent is still stopping; try again in a moment.".format(r["id"])
     wt = Path(r["worktree"] or "")
     try:
-        wt_r = wt.resolve()
         base = _worktrees_dir().resolve()
+        ok = not wt.is_symlink() and wt.resolve().parent == base and wt.resolve() != base
     except (OSError, ValueError):
-        return "I can't tell where task {}'s worktree is.".format(r["id"])
-    if wt_r.parent != base:
-        return "Task {}'s worktree isn't in {}, so I won't remove it.".format(r["id"], WORKTREES)
-    if not wt_r.exists():
-        return "Task {}'s worktree is already gone. Branch {} is kept.".format(r["id"], r["branch"])
-    if not _confirmed:
-        raise ConfirmationRequired("Remove the worktree folder for task {} ({})? Branch {} is kept.".format(
-            r["id"], wt_r.name, r["branch"]))
+        return "I can't tell where task {}'s clone is.".format(r["id"])
+    if not ok:
+        return "Task {}'s clone isn't in {}, so I won't remove it.".format(r["id"], WORKTREES)
+    if not wt.exists():
+        return "Task {}'s clone is already gone. Branch {} is kept.".format(r["id"], r["branch"])
+    gd = _clone_git_dir(wt)
+    if gd is None:
+        return "Task {}'s clone has no usable .git, so I won't remove it.".format(r["id"])
+    sha = _read_ref(gd, r["branch"])
+    if sha and _main_sha(r) != sha:
+        try:
+            _import(r)
+        except Exception:  # noqa: BLE001
+            pass
+    if not sha or _main_sha(r) != sha:
+        return ("Task {}'s clone has work that isn't on branch {} in the repo, so I won't remove "
+                "it.").format(r["id"], r["branch"])
     try:
-        _git(r["repo_path"], "worktree", "remove", str(wt_r))
-    except (RuntimeError, OSError, subprocess.SubprocessError) as e:
-        return "I couldn't remove the worktree (it may have uncommitted changes): {}".format(e)
-    _update(r["id"], last_step="Worktree removed")
-    return "Removed task {}'s worktree. Branch {} is kept.".format(r["id"], r["branch"])
+        dirty = _uncommitted(r)
+    except Exception as e:  # noqa: BLE001
+        return "I couldn't check task {}'s clone for uncommitted changes: {}".format(r["id"], e)
+    if dirty:
+        return "Task {}'s clone has uncommitted changes, so I won't remove it.".format(r["id"])
+    if not _confirmed:
+        raise ConfirmationRequired("Remove the clone folder for task {} ({})? Branch {} is kept.".format(
+            r["id"], wt.name, r["branch"]))
+    try:
+        shutil.rmtree(wt)
+    except OSError as e:
+        return "I couldn't remove task {}'s clone: {}".format(r["id"], e)
+    _update(r["id"], last_step="Clone removed")
+    return "Removed task {}'s clone. Branch {} is kept.".format(r["id"], r["branch"])
