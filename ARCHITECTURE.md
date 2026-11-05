@@ -189,6 +189,72 @@ The enforcement lives in `jarvis/tools/__init__.py`:
 If the user declines, the tool returns a "user declined, do not retry"
 result to the model, which reports back and moves on.
 
+## Coding agents (`tools/dev.py`)
+
+This runs model-written code on the Mac with Yogesh's user rights, so read
+this section before changing it.
+
+**Flow.** `dev_task_start(project, instruction)` resolves the project to a
+git repo under `DEV_ROOTS` (`Projects.md` rows first, then folder names) and
+**always confirms** ("Start a coding agent in jarvis on branch
+jarvis/dark-mode-a1b2 to: …?"). On approval it cuts branch
+`jarvis/<slug>-<4 hex>` from the repo's current HEAD into a worktree at
+`<first DEV_ROOT>/.jarvis-worktrees/<project>-<id>` (`git worktree add`, so
+the main checkout's files and branch are never touched), inserts a
+`dev_tasks` row and starts a daemon thread. The thread runs `sdk_runner`:
+`claude_agent_sdk.query()` with `cwd` = the worktree,
+`permission_mode="acceptEdits"`, tools limited to Read, Edit, Write, Glob,
+Grep and Bash, `setting_sources=["project"]` (the repo's CLAUDE.md and
+`.claude/`, never `~/.claude` hooks, plugins, skills or MCP servers),
+`max_turns` 40, a 20-minute wall clock and model `DEV_AGENT_MODEL`. The
+system prompt tells it to commit on its branch and never push. Each tool
+call updates `last_step` and sends a `devtask` HUD event. When it ends,
+Jarvis records `git diff --stat <base>...<branch>`, the commit list, the
+summary and cost, and announces it (spoken only if the Mac was used in the
+last ten minutes). Errors, timeouts and crashes end as `failed` with a
+reason and are announced the same way; rows still `running` at startup are
+marked failed ("Jarvis restarted"). At most `DEV_AGENT_MAX_RUNNING` (2) run
+at once. `dev_task_cancel` stops an agent and keeps its branch;
+`dev_task_cleanup` removes a finished task's worktree and keeps the branch.
+
+**The boundary is the confirmation, the worktree and the OS sandbox.**
+
+1. *Confirmation.* Nothing runs until Yogesh approves the exact project,
+   branch and instruction on screen or by voice.
+2. *Worktree.* The agent's cwd is a throwaway checkout on its own branch.
+3. *OS sandbox.* Bash runs in Claude Code's sandbox (Seatbelt on macOS)
+   with `allowUnsandboxedCommands=False`: writes are limited to the
+   worktree, the temp dir, and the few dirs of the main repo's `.git` that a
+   commit needs (`objects`, `refs/heads/jarvis`, `logs/refs/heads/jarvis`
+   and this worktree's admin dir). The main checkout, other branches, git
+   config and hooks are read-only to it. Network is limited to the package
+   registries and GitHub (`REGISTRY_DOMAINS`) so installs work.
+4. Jarvis's own secret env vars (`*_KEY`, `*_TOKEN`, ...) are blanked in the
+   agent's environment.
+
+**The guard is best-effort.** `guard()` runs on every tool call through a
+PreToolUse hook (which fires even for calls `acceptEdits` auto-approves)
+and again in `can_use_tool`. It keeps file tools inside the worktree, off
+`.git`, the repo's `.claude/` settings and secret-looking files, and
+pattern-matches Bash for `git push`/`remote`/`worktree`/branch switching,
+`gh`, `ssh`/`scp`/`rsync`/`sudo`/`brew`, global installs, pipes into a
+shell, `rm -rf /` or `~`, and paths outside the worktree. It is string
+matching, and a determined agent gets around it. Residual bypasses:
+
+- command substitution and variables (`bash -c "$(…)"`, `X=push; git $X`);
+- writing a script or Makefile target and running it, or `python -c` /
+  `node -e` calling `subprocess`;
+- reads: the sandbox limits writes, not reads, so a script can still read
+  files Yogesh can read (outside the guard's secret-name list) and send
+  them to an allowed domain such as github.com;
+- anything the agent stages in the worktree runs again when Yogesh later
+  runs that branch's code or tests himself, so review the branch before
+  running or merging it;
+- `git` writes allowed into the shared object store and `jarvis/*` refs
+  could touch another agent's branch.
+
+Nothing is merged or pushed: the work sits on its branch for review.
+
 ## Three LLM backends
 
 With `LLM_BACKEND=nebius`:

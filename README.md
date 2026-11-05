@@ -61,6 +61,14 @@ model"). Design details are in [ARCHITECTURE.md](ARCHITECTURE.md#three-llm-backe
 - **Wake on the name without a model.** If no openWakeWord model is
   available, `audio/spotter.py` transcribes short bursts of speech locally
   and wakes on "Jarvis".
+- **Your Obsidian vault and projects.** "What did I write about X", "note
+  that down", "what's jarvis up to": Jarvis searches and reads the Brain
+  vault, appends to today's daily note or the inbox (it never overwrites or
+  deletes a note), and reads project status from `Projects.md` plus git.
+- **Coding agents by voice.** "In jarvis, add a dark mode toggle" starts a
+  Claude Agent SDK agent on its own branch and git worktree after you
+  approve it on screen. It commits there, never pushes, and Jarvis tells you
+  when it's done. Settings: `DEV_ROOTS`, `DEV_AGENT_*` in `.env`.
 - **A demo profile.** `scripts/seed_demo.py` fills a separate demo Google
   account, tasks, memories and files with fictional data, and
   `scripts/run_demo.sh` launches the app on that profile, so recordings

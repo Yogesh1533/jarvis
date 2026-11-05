@@ -54,9 +54,26 @@ CREATE TABLE IF NOT EXISTS dev_tasks (
     last_step TEXT,
     summary TEXT,
     diffstat TEXT,
-    cost_usd REAL
+    cost_usd REAL,
+    commits TEXT
 );
 """
+
+
+# Columns added after a table first shipped: (table, column, type).
+_ADDED = [("dev_tasks", "commits", "TEXT")]
+_migrated = set()
+
+
+def _migrate(conn):
+    key = str(config.DB_PATH)
+    if key in _migrated:
+        return
+    for table, col, typ in _ADDED:
+        have = {r[1] for r in conn.execute("PRAGMA table_info({})".format(table))}
+        if col not in have:
+            conn.execute("ALTER TABLE {} ADD COLUMN {} {}".format(table, col, typ))
+    _migrated.add(key)
 
 
 @contextmanager
@@ -66,6 +83,7 @@ def connect():
     conn.row_factory = sqlite3.Row
     try:
         conn.executescript(_SCHEMA)
+        _migrate(conn)
         yield conn
         conn.commit()
     finally:

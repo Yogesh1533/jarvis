@@ -384,4 +384,203 @@ check("branch survives cleanup", row(tid)["branch"] in git(alpha, "branch", "--l
 check("main checkout still clean of agent work", not (alpha / "hello.txt").exists()
       and "uncommitted" in (alpha / "README.md").read_text())
 
+print("== SDK runner (fake claude_agent_sdk) ==")
+import types as _types  # noqa: E402
+import time as _time  # noqa: E402
+
+fake = _types.ModuleType("claude_agent_sdk")
+seen = {}
+
+
+class _Opts:
+    def __init__(self, **kw):
+        self.__dict__.update(kw)
+
+
+class _ToolUse:
+    def __init__(self, id, name, input):
+        self.id, self.name, self.input = id, name, input
+
+
+class _Assistant:
+    def __init__(self, content, model="fake"):
+        self.content, self.model = content, model
+
+
+class _Result:
+    def __init__(self, result=None, total_cost_usd=None, is_error=False, subtype="success"):
+        self.result, self.total_cost_usd, self.is_error, self.subtype = result, total_cost_usd, is_error, subtype
+        self.errors = None
+
+
+class _Allow:
+    def __init__(self, updated_input=None):
+        self.behavior, self.updated_input = "allow", updated_input
+
+
+class _Deny:
+    def __init__(self, message="", interrupt=False):
+        self.behavior, self.message, self.interrupt = "deny", message, interrupt
+
+
+class _Matcher:
+    def __init__(self, matcher=None, hooks=None, timeout=None):
+        self.matcher, self.hooks, self.timeout = matcher, hooks or [], timeout
+
+
+async def _happy_query(*, prompt, options=None):
+    seen["options"] = options
+    seen["prompt"] = [m async for m in prompt]
+    wtp = options.cwd
+    yield _Assistant([_ToolUse("t1", "Edit", {"file_path": str(Path(wtp) / "README.md")})])
+    Path(wtp, "README.md").write_text("hi\nfrom the agent\n")
+    git(wtp, "commit", "-q", "-am", "Agent edit")
+    yield _Result(result="Did it.", total_cost_usd=0.02)
+
+
+fake.query = _happy_query
+fake.ClaudeAgentOptions = _Opts
+fake.AssistantMessage = _Assistant
+fake.ToolUseBlock = _ToolUse
+fake.ResultMessage = _Result
+fake.PermissionResultAllow = _Allow
+fake.PermissionResultDeny = _Deny
+fake.HookMatcher = _Matcher
+sys.modules["claude_agent_sdk"] = fake
+os.environ["JARVIS_FAKE_API_KEY"] = "do-not-leak"
+dev._nearby = lambda: False
+
+dev.RUNNER = dev.sdk_runner
+check("sdk_runner is the default runner", dev._DEFAULT_RUNNER is dev.sdk_runner)
+n_ann = len(announced)
+ts = task_id_from(dev.start("alpha", "edit the readme", _confirmed=True))
+dev._threads[ts].join(10)
+r = row(ts)
+check("sdk: task done with the result text", r["state"] == "done" and r["summary"] == "Did it."
+      and abs(r["cost_usd"] - 0.02) < 1e-9)
+check("sdk: last_step from the tool call starts with Edit", (r["last_step"] or "").startswith("Edit"))
+check("sdk: diffstat shows README", "README.md" in (r["diffstat"] or ""))
+check("sdk: commit list stored", "Agent edit" in (r["commits"] or ""))
+check("sdk: finish announced, not spoken when away", len(announced) == n_ann + 1
+      and "finished: Did it." in announced[-1][1] and announced[-1][2] is False)
+o = seen["options"]
+wt_s = r["worktree"]
+check("sdk: cwd is the worktree", str(o.cwd) == wt_s)
+check("sdk: setting_sources project only", o.setting_sources == ["project"])
+check("sdk: acceptEdits", o.permission_mode == "acceptEdits")
+check("sdk: max_turns 40", o.max_turns == 40)
+check("sdk: model from config", o.model == config.DEV_AGENT_MODEL)
+TOOLS6 = ["Read", "Edit", "Write", "Glob", "Grep", "Bash"]
+check("sdk: tool set restricted", o.tools == TOOLS6 and o.allowed_tools == TOOLS6)
+check("sdk: no skills or plugins", o.skills == [] and o.plugins == [])
+check("sdk: system prompt preset + append with branch and Never push",
+      o.system_prompt["type"] == "preset" and o.system_prompt["preset"] == "claude_code"
+      and "Never push" in o.system_prompt["append"] and r["branch"] in o.system_prompt["append"])
+check("sdk: prompt streamed as one user message with the instruction",
+      len(seen["prompt"]) == 1 and seen["prompt"][0]["type"] == "user"
+      and seen["prompt"][0]["message"]["content"] == "edit the readme")
+check("sdk: OS sandbox on, no unsandboxed escape",
+      o.sandbox["enabled"] is True and o.sandbox["allowUnsandboxedCommands"] is False)
+common = Path(git(alpha, "rev-parse", "--path-format=absolute", "--git-common-dir")).resolve()
+allow_w = [Path(p) for p in o.sandbox["filesystem"]["allowWrite"]]
+check("sdk: sandbox may write only git's object/ref/worktree dirs, not the whole .git",
+      common not in allow_w and all(common in p.parents for p in allow_w)
+      and (common / "objects") in allow_w and (common / "worktrees" / Path(wt_s).name) in allow_w)
+check("sdk: package registries reachable", "registry.npmjs.org" in o.sandbox["network"]["allowedDomains"]
+      and "pypi.org" in o.sandbox["network"]["allowedDomains"])
+check("sdk: secret-looking env vars blanked for the agent", o.env.get("JARVIS_FAKE_API_KEY") == "")
+check("sdk: can_use_tool set", callable(o.can_use_tool))
+deny_c = asyncio.run(o.can_use_tool("Bash", {"command": "git push origin HEAD"}, None))
+allow_c = asyncio.run(o.can_use_tool("Read", {"file_path": "README.md"}, None))
+check("sdk: can_use_tool denies guard-denied and allows the rest",
+      deny_c.behavior == "deny" and "remote" in deny_c.message and allow_c.behavior == "allow")
+pre = o.hooks["PreToolUse"]
+check("sdk: PreToolUse hook on every tool", len(pre) == 1 and pre[0].matcher in (None, "*") and pre[0].hooks)
+hook = pre[0].hooks[0]
+h_deny = asyncio.run(hook({"hook_event_name": "PreToolUse", "tool_name": "Bash",
+                           "tool_input": {"command": "git push"}}, "t1", None))
+h_ok = asyncio.run(hook({"hook_event_name": "PreToolUse", "tool_name": "Edit",
+                         "tool_input": {"file_path": str(Path(wt_s) / "a.py")}}, "t2", None))
+h_bad = asyncio.run(hook({"hook_event_name": "PreToolUse", "tool_name": "Write",
+                          "tool_input": {"file_path": "/etc/x"}}, "t3", None))
+hso = (h_deny or {}).get("hookSpecificOutput", {})
+check("sdk: hook denies a guard-denied call", hso.get("hookEventName") == "PreToolUse"
+      and hso.get("permissionDecision") == "deny" and hso.get("permissionDecisionReason"))
+check("sdk: hook denies a write outside the worktree",
+      (h_bad or {}).get("hookSpecificOutput", {}).get("permissionDecision") == "deny")
+check("sdk: hook makes no decision for allowed calls",
+      "permissionDecision" not in (h_ok or {}).get("hookSpecificOutput", {}))
+h_err = asyncio.run(hook({"hook_event_name": "PreToolUse", "tool_name": "Edit", "tool_input": None}, "t4", None))
+check("sdk: hook fails closed on odd input",
+      (h_err or {}).get("hookSpecificOutput", {}).get("permissionDecision") == "deny")
+check("guard: agent can't edit the repo's .claude settings",
+      G("Write", {"file_path": str(wt / ".claude" / "settings.json")}, wt) is not None
+      and G("Edit", {"file_path": str(wt / ".claude" / "settings.local.json")}, wt) is not None)
+
+print("== SDK runner: timeout, crash, error result, cancel ==")
+
+
+async def _slow_query(*, prompt, options=None):
+    await asyncio.sleep(5)
+    yield _Result(result="never")
+
+
+fake.query = _slow_query
+config.DEV_AGENT_TIMEOUT_MIN = 0.01
+n_ann = len(announced)
+tt = task_id_from(dev.start("alpha", "hang forever", _confirmed=True))
+dev._threads[tt].join(10)
+config.DEV_AGENT_TIMEOUT_MIN = 20
+fails = [a for a in announced[n_ann:] if "failed" in a[1]]
+check("timeout -> failed with 'timed out'", row(tt)["state"] == "failed" and "timed out" in (row(tt)["summary"] or ""))
+check("timeout announced once as failed", len(fails) == 1 and len(announced) == n_ann + 1)
+
+
+async def _boom_query(*, prompt, options=None):
+    raise RuntimeError("boom")
+    yield  # noqa: unreachable — makes this an async generator
+
+
+fake.query = _boom_query
+n_ann = len(announced)
+tb = task_id_from(dev.start("alpha", "crash please", _confirmed=True))
+dev._threads[tb].join(10)
+check("crash -> failed with reason", row(tb)["state"] == "failed" and "boom" in (row(tb)["summary"] or ""))
+check("crash announced", len(announced) == n_ann + 1 and "failed" in announced[-1][1])
+check("status without id gives the latest task", tb in dev.status() and "failed" in dev.status())
+out_s, err_s = tools.execute("dev_task_status", {}, lambda p: True)
+check("dev_task_status tool without id gives the latest", tb in out_s and not err_s)
+
+
+async def _error_result(*, prompt, options=None):
+    yield _Result(result=None, is_error=True, subtype="error_max_turns")
+
+
+fake.query = _error_result
+te = task_id_from(dev.start("alpha", "too many turns", _confirmed=True))
+dev._threads[te].join(10)
+check("error result -> failed with the subtype", row(te)["state"] == "failed"
+      and "turn" in (row(te)["summary"] or ""))
+
+gate = threading.Event()
+
+
+async def _chatty_query(*, prompt, options=None):
+    for i in range(200):
+        yield _Assistant([_ToolUse("t%d" % i, "Bash", {"command": "echo %d" % i})])
+        gate.set()
+        await asyncio.sleep(0.02)
+    yield _Result(result="Should not get here.")
+
+
+fake.query = _chatty_query
+n_ann = len(announced)
+tc = task_id_from(dev.start("alpha", "talk a lot", _confirmed=True))
+gate.wait(5)
+dev.cancel(tc, _confirmed=True)
+dev._threads[tc].join(10)
+check("cancel stops the SDK loop", not dev._threads[tc].is_alive() and row(tc)["state"] == "cancelled")
+check("cancel not announced as failure", not any("failed" in a[1] for a in announced[n_ann:]))
+check("Bash step shown as the command", (row(tc)["last_step"] or "").startswith("Bash echo"))
+
 print("ALL {} CHECKS PASSED".format(len(PASS)))

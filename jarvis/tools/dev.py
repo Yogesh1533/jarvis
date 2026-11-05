@@ -5,9 +5,10 @@ Each task gets its own branch `jarvis/<slug>-<id>` and worktree under
 current HEAD with `git worktree add`, so the main checkout's files and branch
 are never touched. Starting, cancelling and cleaning up always confirm.
 
-`RUNNER` does the actual agent work (the Claude Agent SDK runner is set in a
-later task; tests swap in a fake). `guard()` is the per-tool-call path and
-command check the runner applies. File tools must stay inside the worktree.
+`RUNNER` does the actual agent work: `sdk_runner` drives the Claude Agent
+SDK (tests swap in a fake). `guard()` is the per-tool-call path and command
+check; the SDK runner enforces it through a PreToolUse hook (which also runs
+for auto-approved calls) and again in `can_use_tool`. File tools must stay inside the worktree.
 Bash commands are matched against deny rules (git commands that reach a
 remote or the shared .git, gh, ssh, sudo, global installs, secrets) and
 every cd target / absolute / `~` / `..` token must resolve inside the
@@ -15,8 +16,9 @@ worktree (or a small allow-list: /dev/null, /tmp, system bin dirs).
 
 This is best-effort string matching. Known residual bypasses: command
 substitution (`bash -c "$(...)"`), variables, writing a script and running
-it, and python/node `subprocess`. The confirmation gate and worktree
-isolation are the real boundary.
+it, and python/node `subprocess`. The confirmation gate, worktree isolation
+and the SDK's OS sandbox for Bash (writes limited to the worktree plus the
+git dirs a commit needs) are the real boundary.
 
 Config is read at call time.
 """
@@ -40,12 +42,6 @@ _threads = {}                 # task id -> worker thread (tests join these)
 _stops = {}                   # task id -> threading.Event set by cancel()
 _pending = {}                 # (repo, instruction) -> id shown in the confirm prompt
 
-
-def _no_runner(task, on_step, should_stop):
-    raise RuntimeError("the coding agent runner isn't set up")
-
-
-RUNNER = _no_runner
 
 
 # ── helpers ──────────────────────────────────────────────────────────
@@ -230,6 +226,14 @@ def _check_path(value, wt):
     return None
 
 
+def _rel_parts(value, wt):
+    raw = Path(value).expanduser()
+    try:
+        return (raw if raw.is_absolute() else wt / raw).resolve().relative_to(wt).parts
+    except (OSError, RuntimeError, ValueError):
+        return ()
+
+
 def _allowed_outside(tok):
     norm = os.path.normpath(tok)
     if norm in _DEV_FILES:
@@ -327,6 +331,8 @@ def guard(tool_name, tool_input, worktree):
         why = _check_path(args[k], wt)
         if why:
             return why
+        if tool_name != "Read" and ".claude" in _rel_parts(args[k], wt):
+            return "the repo's .claude settings are off limits"
     for k in ("pattern", "glob"):
         if tool_name == "Glob" or k == "glob":
             v = args.get(k)
@@ -380,9 +386,19 @@ def _send(event):
         pass
 
 
+def _nearby():
+    """Speak only if Yogesh touched the Mac recently (unknown counts as near)."""
+    try:
+        from .. import proactive
+        idle = proactive.idle_seconds()
+        return idle is None or idle < proactive.NEARBY_IDLE
+    except Exception:  # noqa: BLE001
+        return True
+
+
 def _announce(text):
     try:
-        hud_bridge.announce("devtask", text, speak=True)
+        hud_bridge.announce("devtask", text, speak=_nearby())
     except Exception:  # noqa: BLE001
         pass
 
@@ -442,9 +458,12 @@ def _new_id(repo, slug):
 # ── worker ───────────────────────────────────────────────────────────
 
 def _diffstat(task):
-    out = _git(task["worktree"], "diff", "--stat", "{}..HEAD".format(task["base_sha"])).strip()
+    """(diffstat, files changed, commit list) of the branch since its base."""
+    base, br = task["base_sha"], task["branch"]
+    out = _git(task["repo_path"], "diff", "--stat", "{}...{}".format(base, br)).strip()
+    commits = _git(task["repo_path"], "log", "--oneline", "{}..{}".format(base, br)).strip()
     m = re.search(r"(\d+) files? changed", out)
-    return out, int(m.group(1)) if m else 0
+    return out, int(m.group(1)) if m else 0, commits[:4000]
 
 
 def _work(task):
@@ -462,13 +481,13 @@ def _work(task):
     ended = False
     try:
         result = RUNNER(dict(task), on_step, stop.is_set) or {}
-        stat, n = _diffstat(task)
+        stat, n, commits = _diffstat(task)
         summary = str(result.get("summary") or "").strip()[:2000]
         cost = float(result.get("cost_usd") or 0)
         ended = True
         if stop.is_set() or not _finish(tid, state="done", finished_at=_now(), summary=summary,
-                                        diffstat=stat, cost_usd=cost):
-            _update(tid, diffstat=stat)   # cancelled meanwhile: keep that state
+                                        diffstat=stat, commits=commits, cost_usd=cost):
+            _update(tid, diffstat=stat, commits=commits)   # cancelled meanwhile: keep that state
             return
         _send({"type": "devtask", "id": tid, "state": "done", "last_step": None})
         _announce("{} agent finished: {} {} files changed on branch {}.".format(
@@ -482,6 +501,181 @@ def _work(task):
     finally:
         if not ended and not stop.is_set():
             _fail(task, "agent ended unexpectedly")
+
+
+# ── Claude Agent SDK runner ──────────────────────────────────────────
+
+AGENT_TOOLS = ["Read", "Edit", "Write", "Glob", "Grep", "Bash"]
+# Hosts sandboxed Bash may reach, so the agent can install a project's
+# dependencies into the worktree. Anything else is blocked by the sandbox.
+REGISTRY_DOMAINS = [
+    "registry.npmjs.org", "registry.yarnpkg.com", "pypi.org", "files.pythonhosted.org",
+    "github.com", "codeload.github.com", "objects.githubusercontent.com",
+    "raw.githubusercontent.com",
+]
+# Env vars blanked for the agent (Jarvis's own .env keys), so `env` in a Bash
+# call can't read them. CLAUDE_CODE_OAUTH_TOKEN is kept: the CLI may need it
+# to log in.
+_SECRET_ENV = re.compile(r"(KEY|TOKEN|SECRET|PASSWORD|CREDENTIALS?)(_PATH)?$", re.I)
+_KEEP_ENV = {"CLAUDE_CODE_OAUTH_TOKEN"}
+
+AGENT_PROMPT = (
+    "You're working in a throwaway worktree on branch {branch}. Make the change, run the "
+    "project's tests if there are any, commit on this branch with a clear message, and end "
+    "with a 2–3 sentence summary. Never push. Some commands are blocked by a guard; if one "
+    "is denied, work around it inside the worktree or say so in your summary."
+)
+
+
+def _step_text(block):
+    args = block.input if isinstance(getattr(block, "input", None), dict) else {}
+    detail = next((args[k] for k in ("file_path", "path", "notebook_path", "command", "pattern")
+                   if isinstance(args.get(k), str) and args[k].strip()), "")
+    return "{} {}".format(block.name, " ".join(detail.split())).strip()[:200]
+
+
+def _agent_env():
+    return {k: "" for k in os.environ if _SECRET_ENV.search(k) and k not in _KEEP_ENV}
+
+
+def _git_write_dirs(worktree):
+    """The dirs a commit from this worktree writes outside it: shared objects,
+    the jarvis/* branch refs and their reflogs, and this worktree's own admin
+    dir (HEAD, index). The rest of the main .git (config, hooks, other
+    branches) stays read-only to sandboxed Bash."""
+    common = Path(_git(worktree, "rev-parse", "--path-format=absolute", "--git-common-dir").strip())
+    admin = Path(_git(worktree, "rev-parse", "--absolute-git-dir").strip())
+    dirs = [common / "objects", common / "refs" / "heads" / "jarvis",
+            common / "logs" / "refs" / "heads" / "jarvis", admin]
+    return [str(d.resolve()) for d in dirs]
+
+
+def _deny_output(reason):
+    return {"hookSpecificOutput": {"hookEventName": "PreToolUse", "permissionDecision": "deny",
+                                   "permissionDecisionReason": reason}}
+
+
+def agent_options(task, sdk):
+    """ClaudeAgentOptions for one task. The guard runs in a PreToolUse hook,
+    which fires for every tool call (acceptEdits and allowed_tools auto-approve
+    calls without ever reaching can_use_tool); can_use_tool repeats it for
+    anything that does reach a permission prompt."""
+    wt = str(task["worktree"])
+
+    def check(name, args):
+        try:
+            return guard(name, args, wt)
+        except Exception as exc:  # noqa: BLE001 — fail closed
+            return "guard error: {}".format(exc)[:200]
+
+    async def pre_tool_use(hook_input, tool_use_id, context):
+        data = hook_input if isinstance(hook_input, dict) else {}
+        why = check(data.get("tool_name"), data.get("tool_input"))
+        return _deny_output(why) if why else {}
+
+    async def can_use_tool(name, args, context):
+        why = check(name, args)
+        if why:
+            return sdk.PermissionResultDeny(message=why)
+        return sdk.PermissionResultAllow()
+
+    return sdk.ClaudeAgentOptions(
+        cwd=wt,
+        model=config.DEV_AGENT_MODEL,
+        max_turns=int(config.DEV_AGENT_MAX_TURNS),
+        permission_mode="acceptEdits",
+        tools=list(AGENT_TOOLS),
+        allowed_tools=list(AGENT_TOOLS),
+        setting_sources=["project"],
+        skills=[],
+        plugins=[],
+        mcp_servers={},
+        strict_mcp_config=True,
+        system_prompt={"type": "preset", "preset": "claude_code",
+                       "append": AGENT_PROMPT.format(branch=task["branch"])},
+        can_use_tool=can_use_tool,
+        hooks={"PreToolUse": [sdk.HookMatcher(matcher=None, hooks=[pre_tool_use])]},
+        sandbox={
+            "enabled": True,
+            "autoAllowBashIfSandboxed": True,
+            "allowUnsandboxedCommands": False,
+            "network": {"allowedDomains": list(REGISTRY_DOMAINS)},
+            "filesystem": {"allowWrite": _git_write_dirs(wt)},
+        },
+        env=_agent_env(),
+    )
+
+
+def _result_error(res):
+    sub = str(getattr(res, "subtype", "") or "error")
+    if sub == "error_max_turns":
+        return "the agent hit the {}-turn limit".format(config.DEV_AGENT_MAX_TURNS)
+    detail = getattr(res, "errors", None) or getattr(res, "result", None) or ""
+    if isinstance(detail, list):
+        detail = "; ".join(str(d) for d in detail)
+    return "agent error ({}){}".format(sub, ": " + str(detail)[:200] if detail else "")
+
+
+def sdk_runner(task, on_step, should_stop):
+    """Run one coding agent on the Claude Agent SDK -> {"summary", "cost_usd"}.
+    Raises on errors and timeouts, and CancelledError once should_stop()."""
+    import asyncio
+
+    import claude_agent_sdk as sdk
+
+    options = agent_options(task, sdk)
+    timeout = float(config.DEV_AGENT_TIMEOUT_MIN) * 60
+
+    async def prompt():
+        # can_use_tool and hooks need streaming input: one user message.
+        yield {"type": "user", "message": {"role": "user", "content": task["instruction"]},
+               "parent_tool_use_id": None, "session_id": "default"}
+
+    async def run():
+        stream = sdk.query(prompt=prompt(), options=options)
+        try:
+            async for msg in stream:
+                if isinstance(msg, sdk.AssistantMessage):
+                    for block in msg.content or []:
+                        if isinstance(block, sdk.ToolUseBlock):
+                            on_step(_step_text(block))
+                elif isinstance(msg, sdk.ResultMessage):
+                    return msg
+        finally:
+            aclose = getattr(stream, "aclose", None)
+            if aclose is not None:
+                await aclose()
+        return None
+
+    async def supervise():
+        loop = asyncio.get_running_loop()
+        deadline = loop.time() + timeout
+        main = asyncio.ensure_future(run())
+        try:
+            while True:
+                done, _ = await asyncio.wait({main}, timeout=0.2)
+                if done:
+                    return main.result()
+                if should_stop():
+                    raise asyncio.CancelledError("cancelled")
+                if loop.time() >= deadline:
+                    raise RuntimeError("the agent timed out after {:g} min".format(
+                        float(config.DEV_AGENT_TIMEOUT_MIN)))
+        finally:
+            if not main.done():
+                main.cancel()
+                await asyncio.wait({main}, timeout=15)
+
+    res = asyncio.run(supervise())
+    if res is None:
+        raise RuntimeError("the agent stopped without a result")
+    if getattr(res, "is_error", False) or str(getattr(res, "subtype", "success")) != "success":
+        raise RuntimeError(_result_error(res))
+    return {"summary": str(getattr(res, "result", "") or ""),
+            "cost_usd": float(getattr(res, "total_cost_usd", 0) or 0)}
+
+
+_DEFAULT_RUNNER = RUNNER = sdk_runner
 
 
 # ── tools ────────────────────────────────────────────────────────────
