@@ -19,8 +19,8 @@ def _vault_blocked(p):
     from . import vault
     try:
         return vault.is_excluded(p)
-    except Exception:  # noqa: BLE001 — a missing/odd vault must not break file tools
-        return False
+    except Exception:  # noqa: BLE001 — privacy gate: fail closed on any error
+        return True
 
 
 def _allowed(path):

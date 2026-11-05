@@ -199,18 +199,32 @@ out, is_err = tools.execute("vault_search", {"query": "logo"}, lambda p: False)
 check("vault_search via execute", not is_err and "Café brief" in out)
 
 config.FILES_ROOTS = [root.resolve()]
+def _refusal(fn, path):
+    try:
+        fn(path)
+    except PermissionError as exc:
+        return "private vault folder" in str(exc)
+    except Exception:  # noqa: BLE001
+        return False
+    return False
+
+
+secret = str(VDIR / "People" / "secret.md")
+check("files.read refuses excluded vault path", _refusal(files.read, secret))
+check("files.open refuses excluded vault path", _refusal(files.open_file, secret))
+check("files.read refuses other casing", _refusal(files.read, str(VDIR / "people" / "secret.md")))
+real_ex = vault.is_excluded
+
+
+def _boom(p):
+    raise OSError("boom")
+
+
+vault.is_excluded = _boom
 try:
-    r = files.read(str(VDIR / "People" / "secret.md"))
-    refused = "secret sauce" not in r
-except Exception:
-    refused = True
-check("files.read refuses excluded vault path", refused)
-try:
-    files.open_file(str(VDIR / "People" / "secret.md"))
-    refused = False
-except Exception:
-    refused = True
-check("files.open refuses excluded vault path", refused)
+    check("files.read fails closed if exclusion check errors", _refusal(files.read, str(VDIR / "Projects.md")))
+finally:
+    vault.is_excluded = real_ex
 real_find = files._find
 files._find = lambda r, q: [str(VDIR / "People" / "secret.md"), str(VDIR / "Projects.md")]
 try:
