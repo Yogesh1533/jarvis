@@ -79,22 +79,46 @@ def find(name):
 
 
 def _git(path, *args):
+    """(returncode, stdout, stderr); raises on timeout or missing git."""
     r = subprocess.run(["git", "-C", str(path), *args], capture_output=True, text=True,
                        timeout=_GIT_TIMEOUT)
-    return r.stdout if r.returncode == 0 else None
+    return r.returncode, r.stdout, r.stderr
+
+
+def _try(path, *args):
+    """stdout, or None if the command failed, timed out or git is missing."""
+    try:
+        rc, out, _ = _git(path, *args)
+    except (OSError, subprocess.SubprocessError):
+        return None
+    return out if rc == 0 else None
 
 
 def git_info(path):
+    """None if path isn't the root of a git repo; {"error": ...} if git failed;
+    otherwise the info dict (dirty is None when status couldn't be read)."""
     try:
-        if _git(path, "rev-parse", "--is-inside-work-tree") is None:
+        rc, out, err = _git(path, "rev-parse", "--show-toplevel")
+    except subprocess.TimeoutExpired:
+        return {"error": "git timed out"}
+    except (OSError, subprocess.SubprocessError) as e:
+        return {"error": "git unavailable ({})".format(e.__class__.__name__)}
+    if rc != 0:
+        if "not a git repository" in err.lower():
             return None
-        branch = (_git(path, "rev-parse", "--abbrev-ref", "HEAD") or "").strip() or "unknown"
-        log = _git(path, "log", "-1", "--format=%cr%x1f%s") or ""
-        rel, _, subject = log.strip().partition("\x1f")
-        dirty = len([l for l in (_git(path, "status", "--porcelain") or "").splitlines() if l.strip()])
-        agents = len([l for l in (_git(path, "branch", "--list", "jarvis/*") or "").splitlines() if l.strip()])
-    except (OSError, subprocess.SubprocessError):
-        return None
+        return {"error": "git failed: {}".format(err.strip()[:80] or "exit {}".format(rc))}
+    try:
+        if Path(out.strip()).resolve() != Path(path).resolve():
+            return None   # nested inside a parent repo: not this project's own repo
+    except OSError:
+        return {"error": "git failed"}
+    branch = (_try(path, "rev-parse", "--abbrev-ref", "HEAD") or "").strip() or "unknown"
+    log = _try(path, "log", "-1", "--format=%cr%x1f%s") or ""
+    rel, _, subject = log.strip().partition("\x1f")
+    st = _try(path, "status", "--porcelain")
+    dirty = None if st is None else len([l for l in st.splitlines() if l.strip()])
+    br = _try(path, "branch", "--list", "jarvis/*")
+    agents = 0 if br is None else len([l for l in br.splitlines() if l.strip()])
     return {"branch": branch, "last_commit_rel": rel, "last_subject": subject,
             "dirty": dirty, "agent_branches": agents}
 
@@ -106,12 +130,20 @@ def _line(r):
     info = git_info(path)
     if info is None:
         return "{}: no git repo".format(r["name"])
+    if "error" in info:
+        return "{}: git unavailable ({})".format(r["name"], info["error"])
     if info["last_subject"]:
         last = 'last commit {} "{}"'.format(info["last_commit_rel"], info["last_subject"])
     else:
         last = "no commits yet"
-    out = "{} (branch {}): {}, ".format(r["name"], info["branch"], last)
-    out += "{} uncommitted file{}".format(info["dirty"], "" if info["dirty"] == 1 else "s") if info["dirty"] else "clean"
+    d = info["dirty"]
+    if d is None:
+        tail = "uncommitted files unknown"
+    elif d:
+        tail = "{} uncommitted file{}".format(d, "" if d == 1 else "s")
+    else:
+        tail = "clean"
+    out = "{} (branch {}): {}, {}".format(r["name"], info["branch"], last, tail)
     if info["agent_branches"]:
         out += ", {} agent branch{}".format(info["agent_branches"], "" if info["agent_branches"] == 1 else "es")
     return out

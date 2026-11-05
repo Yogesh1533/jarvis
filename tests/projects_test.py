@@ -87,4 +87,71 @@ one = projects.status("alpha")
 check("status single project", "alpha" in one and "beta" not in one)
 check("status unknown project", "don't see" in projects.status("zzz").lower() or "no project" in projects.status("zzz").lower())
 
+print("== fix round 1 ==")
+nested = alpha / "sub"
+nested.mkdir()
+check("non-git folder nested in a repo is not a repo", projects.git_info(nested) is None)
+
+real_run = subprocess.run
+
+
+def timing_out(cmd, *a, **k):
+    if "status" in cmd:
+        raise subprocess.TimeoutExpired(cmd, 5)
+    return real_run(cmd, *a, **k)
+
+
+subprocess.run = timing_out
+try:
+    late = projects.git_info(alpha)
+    late_line = projects.status("alpha")
+finally:
+    subprocess.run = real_run
+check("late timeout keeps branch/log, dirty unknown", late["branch"] == "main" and late["dirty"] is None
+      and "uncommitted files unknown" in late_line and "no git" not in late_line)
+
+
+def all_time_out(cmd, *a, **k):
+    raise subprocess.TimeoutExpired(cmd, 5)
+
+
+subprocess.run = all_time_out
+try:
+    to_line = projects.status("alpha")
+finally:
+    subprocess.run = real_run
+check("rev-parse timeout says unavailable, not no git", "unavailable" in to_line and "timed out" in to_line
+      and "no git" not in to_line)
+
+
+def no_git(cmd, *a, **k):
+    raise FileNotFoundError("git")
+
+
+subprocess.run = no_git
+try:
+    nb = projects.status("alpha")
+finally:
+    subprocess.run = real_run
+check("missing git binary says unavailable", "unavailable" in nb and "no git" not in nb)
+
+
+def dubious(cmd, *a, **k):
+    return subprocess.CompletedProcess(cmd, 128, "", "fatal: detected dubious ownership in repository")
+
+
+subprocess.run = dubious
+try:
+    db = projects.status("alpha")
+finally:
+    subprocess.run = real_run
+check("other git failure is not 'no git repo'", "unavailable" in db and "dubious" in db and "no git" not in db)
+
+fresh = root / "fresh"
+fresh.mkdir()
+subprocess.run(["git", "-C", str(fresh), "init", "-q", "-b", "main"], check=True)
+check("no commits yet", "no commits yet" in projects._line({"name": "fresh", "path": fresh}))
+git("branch", "jarvis/x-1abc")
+check("agent branches shown", "1 agent branch" in projects.status("alpha"))
+
 print("ALL {} CHECKS PASSED".format(len(PASS)))
