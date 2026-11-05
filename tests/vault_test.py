@@ -80,6 +80,14 @@ for name, rel in (("excluded folder", "People/secret.md"), ("traversal", "../out
     except ValueError:
         ok = True
     check("read refuses " + name, ok)
+for rel in ("people/secret.md", "PEOPLE/secret.md", "templates/Daily.md"):
+    try:
+        vault.read(rel)
+        ok = False
+    except ValueError:
+        ok = True
+    check("read refuses case variant " + rel, ok)
+check("case variants not searchable", "sauce" not in vault.search("sauce") and "secret" not in vault.search("SECRET"))
 check("read round-trips unicode and spaces", "logo due Friday" in vault.read("Digipearl/Café brief.md"))
 (VDIR / "Big.md").write_text("a" * 9000, encoding="utf-8")
 big = vault.read("Big.md")
@@ -151,5 +159,29 @@ finally:
     Path.read_text = orig_read
     Path.open = orig_open
 check("search survives OSError and returns others", "Café brief" in res)
+
+print("== dataless (iCloud evicted) ==")
+(VDIR / "Evicted.md").write_text("logo evicted body\n", encoding="utf-8")
+real_dataless = vault._is_dataless
+vault._is_dataless = lambda p: Path(p).name == "Evicted.md" or real_dataless(p)
+try:
+    res = vault.search("logo")
+    msg = vault.read("Evicted.md")
+finally:
+    vault._is_dataless = real_dataless
+check("search skips dataless, keeps others", "Evicted" not in res and "Café brief" in res)
+check("read gives clear message for dataless", "isn't downloaded from iCloud" in msg)
+real_stat = os.stat
+
+
+class _St:
+    st_flags = vault.SF_DATALESS
+
+
+os.stat = lambda p, *a, **k: _St() if str(p).endswith("Evicted.md") else real_stat(p, *a, **k)
+try:
+    check("flag bit detected via os.stat", vault._is_dataless(VDIR / "Evicted.md") and not vault._is_dataless(VDIR / "Projects.md"))
+finally:
+    os.stat = real_stat
 
 print("ALL {} CHECKS PASSED".format(len(PASS)))

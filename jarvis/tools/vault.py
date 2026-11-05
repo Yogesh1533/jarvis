@@ -7,6 +7,7 @@ an existing note; nothing here truncates, replaces or deletes content.
 import os
 import re
 import tempfile
+import unicodedata
 from datetime import datetime
 from pathlib import Path
 
@@ -17,7 +18,25 @@ _SCAN_BYTES = 200_000   # iCloud may evict notes; never slurp a huge file
 _SNIPPET = 120
 _NOTES_HEADING = "## Notes / brain dump"
 _FALLBACK_DAILY = "# {date}\n\n" + _NOTES_HEADING + "\n"
+SF_DATALESS = 0x40000000   # st_flags bit: iCloud-evicted file, open() would block
+_NOT_DOWNLOADED = "That note isn't downloaded from iCloud yet."
 _STOP = {"the", "and", "for", "with", "from", "that", "this", "my", "a", "an", "of", "to", "in", "on", "me", "note", "notes"}
+
+
+def _fold(name):
+    return unicodedata.normalize("NFC", name).casefold()
+
+
+def _excluded_names():
+    return {_fold(n) for n in config.VAULT_EXCLUDE}
+
+
+def _is_dataless(p):
+    """True if p is evicted to iCloud (or can't be stat'ed): don't open it."""
+    try:
+        return bool(getattr(os.stat(p), "st_flags", 0) & SF_DATALESS)
+    except OSError:
+        return True
 
 
 def _root():
@@ -31,7 +50,7 @@ def is_excluded(p):
         rel = Path(p).resolve().relative_to(root)
     except ValueError:
         return False
-    return bool(rel.parts) and rel.parts[0] in config.VAULT_EXCLUDE
+    return bool(rel.parts) and _fold(rel.parts[0]) in _excluded_names()
 
 
 def safe_path(rel):
@@ -51,6 +70,8 @@ def safe_path(rel):
 
 def _scan_text(p):
     """First ~200 KB of a note, or None if it can't be read (evicted, binary, ...)."""
+    if _is_dataless(p):
+        return None
     try:
         with p.open("rb") as f:
             return f.read(_SCAN_BYTES).decode("utf-8", errors="replace")
@@ -79,7 +100,8 @@ def _notes():
     root = _root()
     for dirpath, dirs, files in os.walk(root):
         if Path(dirpath) == root:
-            dirs[:] = [d for d in dirs if d not in config.VAULT_EXCLUDE]
+            ex = _excluded_names()
+            dirs[:] = [d for d in dirs if _fold(d) not in ex]
         for name in files:
             if not name.lower().endswith(".md"):
                 continue
@@ -127,6 +149,8 @@ def read(path):
     p = safe_path(path)
     if not p.is_file():
         raise FileNotFoundError("No note at {}".format(path))
+    if _is_dataless(p):
+        return _NOT_DOWNLOADED
     text = p.read_text(encoding="utf-8", errors="replace")
     if len(text) > _READ_CHARS:
         return text[:_READ_CHARS] + "\n…(cut, note is {} chars)".format(len(text))
