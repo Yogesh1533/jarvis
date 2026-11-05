@@ -61,7 +61,7 @@ CREATE TABLE IF NOT EXISTS dev_tasks (
 
 
 # Columns added after a table first shipped: (table, column, type).
-_ADDED = [("dev_tasks", "commits", "TEXT")]
+_ADDED = [("dev_tasks", "commits", "TEXT"), ("tasks", "done_at", "TEXT")]
 _migrated = set()
 
 

@@ -11,6 +11,7 @@ minute) and Jarvis is free, it reads you your day. Mornings only, so
 coming back at 3 pm doesn't get you a stale "good morning".
 """
 import json
+import os
 import re
 import subprocess
 import threading
@@ -184,10 +185,25 @@ class Proactive:
 
     # -- morning briefing ------------------------------------------------
     def _last_briefing(self):
+        return self._load_state("briefing")
+
+    def _read_state(self):
         try:
-            return json.loads(self._state_path.read_text(encoding="utf-8")).get("briefing")
+            data = json.loads(self._state_path.read_text(encoding="utf-8"))
         except (OSError, ValueError):
-            return None
+            return {}
+        return data if isinstance(data, dict) else {}
+
+    def _load_state(self, key):
+        return self._read_state().get(key)
+
+    def _save_state(self, key, value):
+        """Read-merge-write so one feature's date never wipes another's."""
+        state = self._read_state()
+        state[key] = value
+        tmp = self._state_path.with_name(self._state_path.name + ".tmp")
+        tmp.write_text(json.dumps(state), encoding="utf-8")
+        os.replace(str(tmp), str(self._state_path))
 
     def _briefing(self, setting):
         now = datetime.now()
@@ -195,7 +211,5 @@ class Proactive:
             return
         if not self.hub.free() or not self.hub.brief(BRIEFING_PROMPT):
             return   # busy or nobody's window is open; try again shortly
-        self._state_path.write_text(
-            json.dumps({"briefing": now.date().isoformat()}), encoding="utf-8"
-        )
+        self._save_state("briefing", now.date().isoformat())
 
