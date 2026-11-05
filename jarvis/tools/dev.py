@@ -335,10 +335,11 @@ def _work(task):
             ended = True
             return
         try:
+            changed = _finish(tid, state="failed", finished_at=_now(), summary=reason)
             ended = True
-            if not _finish(tid, state="failed", finished_at=_now(), summary=reason):
-                return
-        finally:
+        except Exception:  # noqa: BLE001 — db trouble: still tell the user it failed
+            changed = True
+        if changed:   # False means it was cancelled meanwhile: stay quiet
             hud_bridge.send({"type": "devtask", "id": tid, "state": "failed", "last_step": None})
             hud_bridge.announce("devtask", "{} agent failed: {}".format(task["project"], reason),
                                 speak=True)
