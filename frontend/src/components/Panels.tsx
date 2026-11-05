@@ -123,14 +123,19 @@ export function TasksPanel() {
 // ── Agents ─────────────────────────────────────────────────────────
 function elapsed(t: DevTask, now: Date) {
   const end = t.finished_at ? parseLocal(t.finished_at) : now;
-  return countdown((end.getTime() - parseLocal(t.started_at).getTime()) / 1000);
+  const secs = (end.getTime() - parseLocal(t.started_at).getTime()) / 1000;
+  return Number.isFinite(secs) ? countdown(secs) : "–";
 }
 
 export function AgentsPanel() {
-  const res = usePanelData<DevTask[]>("/api/devtasks", "agents");
+  // Poll slowly while something runs, in case the websocket drops mid-run.
+  const [poll, setPoll] = useState(0);
+  const res = usePanelData<DevTask[]>("/api/devtasks", "agents", poll);
   const demo = useStore((s) => s.demoDevtasks);
   const tasks = demo ?? res.data ?? [];
   const running = tasks.filter((t) => t.state === "running").length;
+  const wantPoll = !demo && running > 0 ? 15_000 : 0;
+  useEffect(() => setPoll(wantPoll), [wantPoll]);
   const now = useNow(running ? 1000 : 60_000);
 
   return (
@@ -148,6 +153,10 @@ export function AgentsPanel() {
             <div className="agent-instr" title={t.instruction}>{t.instruction}</div>
             {t.state === "done" ? (
               <div className="agent-step">{[t.diffstat, t.branch].filter(Boolean).join(" · ")}</div>
+            ) : t.state === "failed" || t.state === "cancelled" ? (
+              (t.summary ?? t.last_step) && (
+                <div className="agent-step err" title={t.summary ?? t.last_step ?? ""}>{t.summary ?? t.last_step}</div>
+              )
             ) : (
               t.last_step && <div className="agent-step">{t.last_step}</div>
             )}
