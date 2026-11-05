@@ -46,12 +46,6 @@ def _git(path, *args):
 
 
 def _commits():
-    try:
-        email = _git(".", "config", "user.email").strip()
-    except (OSError, subprocess.SubprocessError):
-        return ""
-    if not email:
-        return ""
     blocks = []
     for r in projects.rows():
         path = r["path"]
@@ -60,6 +54,10 @@ def _commits():
                 continue
             info = projects.git_info(path)
             if info is None or "error" in info:
+                continue
+            # Per repo: a repo-local user.email beats the global one.
+            email = _git(path, "config", "user.email").strip()
+            if not email:
                 continue
             log = _git(path, "log", "--since=midnight", "--author=" + email, "--format=%s")
         except (OSError, subprocess.SubprocessError):
