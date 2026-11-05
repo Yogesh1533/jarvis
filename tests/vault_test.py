@@ -1,0 +1,155 @@
+"""Offline test for the Brain vault tools (search, read, note) on a temp vault.
+
+Run:  .venv/bin/python tests/vault_test.py
+"""
+import os
+import sys
+import tempfile
+from datetime import datetime
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+
+from jarvis import config  # noqa: E402
+
+PASS = []
+
+
+def check(name, cond):
+    assert cond, "FAILED: {}".format(name)
+    PASS.append(name)
+    print("  ok - {}".format(name))
+
+
+DAILY_TEMPLATE = """---
+type: daily
+created: {{date}}
+---
+
+# {{date}}
+
+## Flags
+
+## Schedule
+
+## Deadlines (next 7 days)
+
+## Top 3
+- [ ] 
+- [ ] 
+- [ ] 
+
+## Tasks
+- [ ] 
+
+## Notes / brain dump
+"""
+
+root = Path(tempfile.mkdtemp(prefix="jarvis-vault-test-"))
+VDIR = root / "Brain"
+for d in ("Daily", "Templates", "People", "Digipearl", "00 Inbox"):
+    (VDIR / d).mkdir(parents=True)
+(VDIR / "Templates" / "Daily.md").write_text(DAILY_TEMPLATE, encoding="utf-8")
+(VDIR / "People" / "secret.md").write_text("# secret\nthe secret sauce\n", encoding="utf-8")
+(VDIR / "Projects.md").write_text("# Dashboard\nall the things\n", encoding="utf-8")
+(VDIR / "Digipearl" / "Café brief.md").write_text("# Café brief\nlogo due Friday\n", encoding="utf-8")
+(root / "outside.md").write_text("outside\n", encoding="utf-8")
+(root / "x.md").write_text("x\n", encoding="utf-8")
+os.symlink(root / "x.md", VDIR / "Daily" / "link.md")
+
+config.VAULT_DIR = VDIR
+config.VAULT_EXCLUDE = [".obsidian", ".trash", "Templates", "People", "Life"]
+
+from jarvis.tools import vault  # noqa: E402
+
+NOW = datetime(2026, 11, 5, 9, 30)
+
+print("== search ==")
+check("content hit finds Café note", "Café brief" in vault.search("logo"))
+first = vault.search("projects").splitlines()[0]
+check("title hit ranks first", "Projects.md" in first)
+check("words fallback finds note", "Café brief" in vault.search("friday logo"))
+check("excluded folder not searched", "secret" not in vault.search("secret"))
+
+print("== read ==")
+for name, rel in (("excluded folder", "People/secret.md"), ("traversal", "../outside.md"),
+                  ("symlink escape", "Daily/link.md"), ("non-md", "Templates/Daily.txt")):
+    try:
+        vault.read(rel)
+        ok = False
+    except ValueError:
+        ok = True
+    check("read refuses " + name, ok)
+check("read round-trips unicode and spaces", "logo due Friday" in vault.read("Digipearl/Café brief.md"))
+(VDIR / "Big.md").write_text("a" * 9000, encoding="utf-8")
+big = vault.read("Big.md")
+check("read cuts long notes", "…(cut, note is 9000 chars)" in big and len(big) < 8100)
+check("is_excluded", vault.is_excluded(VDIR / "People" / "secret.md") and not vault.is_excluded(VDIR / "Projects.md"))
+
+print("== note: daily ==")
+r = vault.note("call Sam", _now=NOW)
+check("note reply", r == "Added to Daily/2026-11-05.md")
+daily = VDIR / "Daily" / "2026-11-05.md"
+text1 = daily.read_text(encoding="utf-8")
+check("daily created from template", "created: 2026-11-05" in text1 and "# 2026-11-05" in text1)
+check("bullet after notes heading", text1.index("## Notes / brain dump") < text1.index("- 09:30 call Sam"))
+vault.note("buy cable", _now=datetime(2026, 11, 5, 9, 45))
+text2 = daily.read_text(encoding="utf-8")
+check("second bullet appended after first", text2.index("- 09:30 call Sam") < text2.index("- 09:45 buy cable"))
+check("earlier content kept as prefix", text2.startswith(text1.rstrip("\n")))
+
+print("== note: heading not last ==")
+mid = VDIR / "Daily" / "2026-11-06.md"
+orig = "# d\n\n## Notes / brain dump\n- 08:00 old\n\n## After\nkeep me\n"
+mid.write_text(orig, encoding="utf-8")
+vault.note("new", _now=datetime(2026, 11, 6, 10, 0))
+new_lines = mid.read_text(encoding="utf-8").splitlines()
+it = iter(new_lines)
+check("original lines kept in order", all(any(l == n for n in it) for l in orig.splitlines()))
+check("inserted in the right section", new_lines.index("- 10:00 new") < new_lines.index("## After"))
+
+print("== note: section ==")
+before = daily.read_text(encoding="utf-8")
+vault.note("line1\nline2", section="Wrap", _now=datetime(2026, 11, 5, 20, 0))
+after = daily.read_text(encoding="utf-8")
+check("section block appended at end", after.endswith("## Wrap 20:00\nline1\nline2\n") and after.startswith(before.rstrip("\n")))
+vault.note("again", section="Wrap", _now=datetime(2026, 11, 5, 21, 0))
+check("two wrap blocks", daily.read_text(encoding="utf-8").count("## Wrap") == 2)
+
+print("== note: inbox ==")
+r1 = vault.note("idea", where="inbox", title="New idea", _now=NOW)
+r2 = vault.note("idea", where="inbox", title="New idea", _now=NOW)
+f1 = VDIR / "00 Inbox" / "2026-11-05_new-idea.md"
+f2 = VDIR / "00 Inbox" / "2026-11-05_new-idea-2.md"
+check("inbox files created", f1.exists() and f2.exists())
+check("inbox replies", r1 == "Created 00 Inbox/2026-11-05_new-idea.md" and r2.endswith("_new-idea-2.md"))
+check("inbox frontmatter", "type: note" in f1.read_text(encoding="utf-8") and "idea" in f1.read_text(encoding="utf-8"))
+
+print("== search skips unreadable files ==")
+(VDIR / "Bad.md").write_text("logo trouble\n", encoding="utf-8")
+orig_read = Path.read_text
+orig_open = Path.open
+
+
+def bad_read(self, *a, **k):
+    if self.name == "Bad.md":
+        raise OSError("dataless")
+    return orig_read(self, *a, **k)
+
+
+def bad_open(self, *a, **k):
+    if self.name == "Bad.md":
+        raise OSError("dataless")
+    return orig_open(self, *a, **k)
+
+
+Path.read_text = bad_read
+Path.open = bad_open
+try:
+    res = vault.search("logo")
+finally:
+    Path.read_text = orig_read
+    Path.open = orig_open
+check("search survives OSError and returns others", "Café brief" in res)
+
+print("ALL {} CHECKS PASSED".format(len(PASS)))

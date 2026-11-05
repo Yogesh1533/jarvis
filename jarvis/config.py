@@ -109,6 +109,23 @@ FILES_ROOTS = [
     if p.strip()
 ]
 
+# Obsidian "Brain" vault: Jarvis searches, reads and appends to it. Folders in
+# VAULT_EXCLUDE (first path part, relative to the vault) are never touched.
+VAULT_DIR = Path(os.path.expanduser(os.getenv(
+    "VAULT_DIR", "~/Library/Mobile Documents/com~apple~CloudDocs/Obsidian/Brain",
+)))
+VAULT_EXCLUDE = [
+    p.strip() for p in os.getenv("VAULT_EXCLUDE", ".obsidian,.trash,Templates,People,Life").split(",")
+    if p.strip()
+]
+
+# Code folders coding agents may work in (comma-separated)
+DEV_ROOTS = [
+    Path(os.path.expanduser(p.strip())).resolve()
+    for p in os.getenv("DEV_ROOTS", "~/Developer").split(",")
+    if p.strip()
+]
+
 # Semantic recall: a small local embedding model (ONNX, CPU). The cache lives
 # outside the project because the project sits in iCloud, which evicts files.
 EMBED_MODEL = os.getenv("EMBED_MODEL", "BAAI/bge-small-en-v1.5")
