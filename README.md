@@ -66,9 +66,14 @@ model"). Design details are in [ARCHITECTURE.md](ARCHITECTURE.md#three-llm-backe
   vault, appends to today's daily note or the inbox (it never overwrites or
   deletes a note), and reads project status from `Projects.md` plus git.
 - **Coding agents by voice.** "In jarvis, add a dark mode toggle" starts a
-  Claude Agent SDK agent on its own branch and git worktree after you
+  Claude Agent SDK agent on its own branch in a throwaway clone after you
   approve it on screen. It commits there, never pushes, and Jarvis tells you
-  when it's done. Settings: `DEV_ROOTS`, `DEV_AGENT_*` in `.env`.
+  when it's done. Its Bash runs in the OS sandbox: writes stay in the clone,
+  and reads of your keys, iCloud/Google Drive, the vault, `~/Media`, Mail,
+  Messages and browser data are denied. Other files you can read are still
+  readable, and github.com is reachable, so treat an agent run on an
+  untrusted repo as able to leak those (see ARCHITECTURE.md). Settings:
+  `DEV_ROOTS`, `DEV_AGENT_*` in `.env`.
 - **A demo profile.** `scripts/seed_demo.py` fills a separate demo Google
   account, tasks, memories and files with fictional data, and
   `scripts/run_demo.sh` launches the app on that profile, so recordings

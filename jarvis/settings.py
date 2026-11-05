@@ -73,6 +73,10 @@ WAKE_THRESHOLDS = {"low": 0.65, "high": 0.32}
 CONVERSATION_WINDOW = {"open": 20.0}
 
 
+_ON = ("1", "true", "on", "yes", "enable", "enabled")
+_OFF = ("0", "false", "off", "no", "disable", "disabled")
+
+
 def _clock(key, value, example):
     """'off' or a time of day, normalised to HH:MM."""
     value = str(value).strip().lower()
@@ -129,7 +133,13 @@ def update(**changes):
             raise ValueError("Unknown setting {!r}".format(key))
         if isinstance(DEFAULTS[key], bool):
             if isinstance(value, str):
-                value = value.strip().lower() in ("1", "true", "on", "yes", "enable", "enabled")
+                word = value.strip().lower()
+                if word in _ON:
+                    value = True
+                elif word in _OFF:
+                    value = False
+                else:
+                    raise ValueError("{} must be on or off".format(key))
             value = bool(value)
         elif key == "meeting_alerts":
             value = str(value).strip().lower().removesuffix(" minutes").removesuffix(" min")

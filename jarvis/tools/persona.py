@@ -86,4 +86,7 @@ def list_options():
 
 def set_preference(setting, value):
     s = settings.update(**{setting: value})
-    return "Updated {} to {}.".format(_LABELS.get(setting, setting), s[setting])
+    shown = s[setting]
+    if isinstance(shown, bool):
+        shown = "on" if shown else "off"
+    return "Updated {} to {}.".format(_LABELS.get(setting, setting), shown)

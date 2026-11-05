@@ -493,6 +493,18 @@ need_deny = [HOME / ".secrets", HOME / ".ssh", HOME / "Library" / "Keychains", H
              config.ROOT / "data", alpha.resolve() / ".env.local"]
 check("sdk: sandbox denies reads of secrets, Jarvis's .env/data and the repo's .env files",
       all(str(x) in fsx["denyRead"] for x in need_deny))
+LIB = HOME / "Library"
+need_private = [LIB / "Mobile Documents", LIB / "CloudStorage", HOME / "Media", LIB / "Messages",
+                LIB / "Mail", LIB / "Cookies", LIB / "Safari",
+                LIB / "Application Support" / "Google" / "Chrome",
+                LIB / "Application Support" / "Firefox",
+                LIB / "Application Support" / "BraveSoftware",
+                LIB / "Application Support" / "Arc", HOME / ".claude" / "projects",
+                Path(config.VAULT_DIR)]
+check("sdk: sandbox denies reads of iCloud, Drive, the vault, Media, Mail/Messages and browser data",
+      all(str(x) in fsx["denyRead"] for x in need_private))
+check("sdk: shell snapshots under ~/.claude stay readable (Bash sources them)",
+      str(HOME / ".claude") not in fsx["denyRead"])
 check("sdk: package registries reachable", "registry.npmjs.org" in o.sandbox["network"]["allowedDomains"]
       and "pypi.org" in o.sandbox["network"]["allowedDomains"])
 check("sdk: secret-looking env vars blanked for the agent", o.env.get("JARVIS_FAKE_API_KEY") == ""
@@ -702,7 +714,135 @@ check("cleanup refuses a clone with uncommitted changes", "uncommitted" in dev.c
 (cu / ".claude").mkdir(exist_ok=True)
 (cu / ".claude" / ".cc-writes").write_text("x")
 git(cu, "checkout", "--", "README.md")
+(cu / "notes.txt").write_text("untracked\n")
+check("cleanup refuses a clone with an untracked file", "uncommitted" in dev.cleanup(tu, _confirmed=True))
+(cu / "notes.txt").unlink()
+(cu / "hello.txt").unlink()
+check("cleanup refuses a clone with a deleted file", "uncommitted" in dev.cleanup(tu, _confirmed=True))
+git(cu, "checkout", "--", "hello.txt")
+(cu / "ignored.log").write_text("x\n")
+(cu / ".gitignore").write_text("*.log\n")
+check("an untracked .gitignore itself blocks cleanup", "uncommitted" in dev.cleanup(tu, _confirmed=True))
+(cu / ".gitignore").unlink()
+(cu / "ignored.log").unlink()
 check("CLI bookkeeping in .claude/ doesn't block cleanup",
       "Removed" in dev.cleanup(tu, _confirmed=True) and not cu.exists())
+
+print("== final review M1: git failures carry git's own reason ==")
+try:
+    dev._git(alpha, "-c", "protocol.file.allow=always", "fetch", "--no-tags", str(root / "nope"),
+             "refs/heads/x:refs/heads/x")
+    m1 = ""
+except RuntimeError as e:
+    m1 = str(e)
+check("error names the subcommand, not the -c option", m1.startswith("git fetch failed: "))
+check("error carries git's stderr", len(m1) > len("git fetch failed: ") + 5 and "nope" in m1)
+# A non-fast-forward import reports the rejection.
+dev.RUNNER = fake_runner
+tnf = task_id_from(dev.start("alpha", "diverge me", _confirmed=True))
+dev._threads[tnf].join(10)
+rnf = row(tnf)
+cnf = Path(rnf["worktree"])
+git(cnf, "reset", "-q", "--hard", rnf["base_sha"])
+(cnf / "other.txt").write_text("other\n")
+git(cnf, "add", "other.txt")
+git(cnf, "commit", "-q", "-m", "diverged")
+try:
+    dev._import(rnf)
+    nf = ""
+except RuntimeError as e:
+    nf = str(e)
+check("non-fast-forward import says why", "rejected" in nf or "non-fast-forward" in nf)
+
+print("== final review C1: nested repo's filter must not run during cleanup ==")
+PWN2 = root / "PWNED-nested"
+PWN3 = root / "PWNED-global"
+EVIL_NESTED, EVIL_GLOBAL = root / "evil-nested.sh", root / "evil-global.sh"
+for script, mark in ((EVIL_NESTED, PWN2), (EVIL_GLOBAL, PWN3)):
+    script.write_text("#!/bin/sh\ntouch '{}'\ncat\n".format(mark))
+    script.chmod(0o755)
+
+
+def nested_filter(task, on_step, should_stop):
+    """What a sandboxed agent can do: it can't touch <clone>/.git/config, but it
+    can init a nested repo, give that repo's own config a filter, and commit a
+    gitlink to it."""
+    wtp = Path(task["worktree"])
+    sub = wtp / "sub"
+    git(wtp, "init", "-q", "sub")
+    git(sub, "config", "user.email", "a@a")
+    git(sub, "config", "user.name", "a")
+    (sub / "f").write_text("x\n")
+    git(sub, "add", "f")
+    git(sub, "commit", "-q", "-m", "s")
+    with open(sub / ".git" / "config", "a") as fh:
+        fh.write('[filter "evil"]\n\tclean = {}\n'.format(EVIL_NESTED))
+    (sub / ".gitattributes").write_text("f filter=evil\n")
+    _time.sleep(1.1)
+    (sub / "f").write_text("y\n")   # same size, newer mtime: forces a content check
+    # A filter=<name> line (like lfs) resolves to whatever the global git config defines.
+    (wtp / "big.bin").write_text("data\n")
+    (wtp / ".gitattributes").write_text("big.bin filter=jvglobal\n")
+    git(wtp, "add", "big.bin", ".gitattributes")
+    subsha = git(sub, "rev-parse", "HEAD")
+    git(wtp, "update-index", "--add", "--cacheinfo", "160000,{},sub".format(subsha))
+    git(wtp, "commit", "-q", "-m", "add sub")
+    _time.sleep(1.1)
+    (wtp / "big.bin").write_text("DATA\n")   # same size again: content check needed
+    git(wtp, "checkout", "--", "big.bin")
+    return {"summary": "Nested.", "cost_usd": 0}
+
+
+fake_home = root / "fakehome"
+fake_home.mkdir()
+(fake_home / ".gitconfig").write_text(
+    '[filter "jvglobal"]\n\tclean = {}\n\tsmudge = cat\n'.format(EVIL_GLOBAL))
+dev.RUNNER = nested_filter
+tn = task_id_from(dev.start("alpha", "nested repo filter", _confirmed=True))
+dev._threads[tn].join(15)
+rn = row(tn)
+check("nested: task done and branch imported", rn["state"] == "done"
+      and git(alpha, "branch", "--list", rn["branch"]) != "")
+cn = Path(rn["worktree"])
+check("nested: the gitlink shows in the diffstat", "sub" in (rn["diffstat"] or ""))
+(cn / "sub" / "f").write_text("z\n")   # touch again so stat data is surely stale
+old_home = os.environ.get("HOME")
+os.environ["HOME"] = str(fake_home)
+clone_calls = []
+
+
+def recording_run2(args, *a, **kw):
+    if sys._getframe(1).f_globals.get("__name__") == "jarvis.tools.dev" and args and args[0] == "git":
+        if any(str(cn) in str(x) or ".snapshot-" in str(x) for x in args):
+            clone_calls.append((list(args), kw.get("env") or {}))
+    return _real_run(args, *a, **kw)
+
+
+subprocess.run = recording_run2
+try:
+    try:
+        dev.cleanup(tn)
+        nested_asked = False
+    except tools.ConfirmationRequired:
+        nested_asked = True
+    check("nested: cleanup's pre-confirm check ran no planted filter", not PWN2.exists())
+    check("nested: no global-config filter ran either", not PWN3.exists())
+    check("nested: cleanup still asks to remove the clone", nested_asked)
+    out_n = dev.cleanup(tn, _confirmed=True)
+finally:
+    subprocess.run = _real_run
+    if old_home is None:
+        os.environ.pop("HOME", None)
+    else:
+        os.environ["HOME"] = old_home
+check("nested: no git status on the clone any more",
+      clone_calls and not any("status" in c for c, _ in clone_calls))
+check("nested: every git call on the clone or its snapshot is strict (no global/system config, "
+      "no submodule recursion)",
+      all(e.get("GIT_CONFIG_GLOBAL") == os.devnull and e.get("GIT_CONFIG_NOSYSTEM") == "1"
+          and "submodule.recurse=false" in c and "core.attributesFile=/dev/null" in c
+          for c, e in clone_calls if "fetch" not in c))
+check("nested: clone removed", "Removed" in out_n and not cn.exists())
+check("nested: no marker after confirmed cleanup", not PWN2.exists() and not PWN3.exists())
 
 print("ALL {} CHECKS PASSED".format(len(PASS)))

@@ -232,8 +232,14 @@ once. `dev_task_cancel` stops an agent and keeps its branch.
 `dev_task_cleanup` deletes a finished task's clone folder. It does that
 only if the folder sits directly in `.jarvis-worktrees`, the clone's
 branch is already in the main repo at the same commit, and there are no
-uncommitted changes (checked through a snapshot too). The branch is
-always kept.
+uncommitted changes. That check never runs `git status` on the clone: a
+Jarvis-owned snapshot gets a fresh index from the committed tree, and
+`git ls-files -m -d -o` compares content with no global or system config
+(`STRICT_GIT` plus `GIT_CONFIG_GLOBAL=/dev/null`, `GIT_CONFIG_NOSYSTEM=1`),
+so no filter, textconv or hook can be defined, and git never recurses
+into a nested repo the agent made. Gitlinks are compared by commit only,
+so a dirty nested repo inside the clone doesn't block cleanup. The branch
+is always kept.
 
 **The boundary is the confirmation, the clone and the OS sandbox.**
 
@@ -247,8 +253,15 @@ always kept.
    `.claude/`, `.git/config` and `.git/hooks`. Reads are denied for
    `~/.secrets`, `~/.ssh`, `~/Library/Keychains`, `~/.aws`, `~/.config/gh`,
    `~/.gnupg`, `~/.netrc`, Jarvis's `.env`, `credentials.json` and `data/`,
-   and the repo's `.env*` files. Network is limited to the package
-   registries and GitHub (`REGISTRY_DOMAINS`) so installs work.
+   the repo's top-level `.env*` files, and Yogesh's private data: iCloud
+   Drive (`~/Library/Mobile Documents`, which holds the vault), the vault
+   at `VAULT_DIR` wherever it is, Google Drive (`~/Library/CloudStorage`),
+   `~/Media`, `~/Library/Mail`, `~/Library/Messages`, `~/Library/Cookies`,
+   Safari, Chrome, Firefox, Brave and Arc profiles, and Claude session
+   transcripts (`~/.claude/projects`; the rest of `~/.claude` stays
+   readable because Bash sources the CLI's shell snapshot from there).
+   Network is limited to the package registries and GitHub
+   (`REGISTRY_DOMAINS`) so installs work.
 4. Secret-looking env vars (`*_KEY`, `*_TOKEN`, ... including any
    `CLAUDE_CODE_OAUTH_TOKEN`) are blanked for the agent. The CLI logs in
    from the keychain.
@@ -267,9 +280,19 @@ the guard is the only path check.
 
 **Residual risks.**
 
-- Exfiltration: sandboxed code can read the clone and anything outside the
-  deny list that Yogesh can read, and send it to an allowed domain
-  (github.com included).
+- Exfiltration: sandboxed code can still read anything outside the deny
+  list that Yogesh can read (other repos under `~/Developer`, `~/Documents`,
+  `~/Desktop`, `~/Downloads`, app data not listed above, nested `.env`
+  files in the main repo) and send it to an allowed domain. **github.com
+  is allowed**, so an agent can push data to any GitHub repo over HTTPS;
+  the guard's `push` rule is string matching and doesn't stop that. That
+  is a deliberate trade-off for installs from GitHub. The sandbox supports
+  a stronger shape (`denyRead: ["~"]` with `filesystem.allowRead` for the
+  clone and toolchain caches, which takes precedence over `denyRead`); it
+  isn't used yet because each project's toolchain paths would need tuning.
+- Git calls Jarvis makes against the clone (snapshot, import, the cleanup
+  check) use `STRICT_GIT`. `_make_clone` uses normal config, but it runs
+  before the agent starts, on the repo's own content.
 - The temp dirs are writable, so `DEV_ROOTS` must not be under `/tmp`.
 - Anything the agent commits runs when Yogesh later runs that branch's code
   or tests. Review the branch before running or merging it.

@@ -43,6 +43,17 @@ WORKTREES = ".jarvis-worktrees"
 _GIT_TIMEOUT = 60
 # Never let a repo's config run programs when Jarvis itself calls git.
 SAFE_GIT = ("-c", "core.fsmonitor=false", "-c", "core.hooksPath=/dev/null")
+# Extra overrides for git calls that read agent-written content (the clone's
+# work tree, index or objects through a snapshot). With these plus
+# _git_env(strict=True) no global or system config is read, so no filter,
+# textconv, diff driver or include can be defined except by Jarvis, and git
+# never recurses into a nested repo, whose own .git/config the agent writes.
+STRICT_GIT = SAFE_GIT + (
+    "-c", "core.attributesFile=/dev/null", "-c", "submodule.recurse=false",
+    "-c", "diff.ignoreSubmodules=all", "-c", "status.submoduleSummary=false",
+    "-c", "core.untrackedCache=false", "-c", "core.splitIndex=false",
+    "-c", "protocol.allow=never",
+)
 _SHA = re.compile(r"^[0-9a-f]{40}([0-9a-f]{24})?$")
 
 # The PreToolUse hook is the real gate, so can_use_tool being shadowed by
@@ -83,20 +94,43 @@ def _inside(p, parent):
     return p == parent or parent in p.parents
 
 
-def _git(path, *args, git_dir=None, work_tree=None):
-    cmd = ["git", *SAFE_GIT]
+def _git(path, *args, git_dir=None, work_tree=None, strict=False):
+    """Run git; strict=True for anything that reads agent-written content."""
+    cmd = ["git", *(STRICT_GIT if strict else SAFE_GIT)]
     if git_dir is not None:
         cmd += ["--git-dir", str(git_dir), "--work-tree", str(work_tree or path)]
     r = subprocess.run(cmd + ["-C", str(path), *args], capture_output=True, text=True,
-                       timeout=_GIT_TIMEOUT, env=_git_env())
+                       timeout=_GIT_TIMEOUT, env=_git_env(strict))
     if r.returncode != 0:
-        raise RuntimeError("git {} failed: {}".format(args[0], (r.stderr or r.stdout).strip()[:200]))
+        raise RuntimeError("git {} failed: {}".format(_subcommand(args), _git_error(r)))
     return r.stdout
 
 
-def _git_env():
+def _subcommand(args):
+    """The git subcommand in args, skipping options and `-c` values."""
+    it = iter(args)
+    for a in it:
+        if a == "-c":
+            next(it, None)
+        elif not a.startswith("-"):
+            return a
+    return "command"
+
+
+def _git_error(r):
+    """git's own reason, minus `From <url>` and hint lines."""
+    lines = [l.strip() for l in (r.stderr or r.stdout or "").splitlines()]
+    keep = [l for l in lines if l and not l.startswith(("From ", "hint:"))]
+    return "; ".join(keep)[:300] or "exit {}".format(r.returncode)
+
+
+def _git_env(strict=False):
     env = {k: v for k, v in os.environ.items() if not k.startswith("GIT_")}
     env["GIT_TERMINAL_PROMPT"] = "0"
+    if strict:
+        env["GIT_CONFIG_GLOBAL"] = os.devnull
+        env["GIT_CONFIG_NOSYSTEM"] = "1"
+        env["GIT_ATTR_NOSYSTEM"] = "1"
     return env
 
 
@@ -519,8 +553,8 @@ def _read_ref(git_dir, branch):
     return None
 
 
-def _snapshot(task, with_index=False):
-    """Copy the clone's objects (+ index) into a fresh git dir Jarvis writes
+def _snapshot(task):
+    """Copy the clone's objects into a fresh git dir Jarvis writes
     itself, with its own config and the repo's objects as alternates.
     Returns (snapshot dir, branch sha or None). Nothing from the clone's
     config, hooks, commondir or info/ is carried over."""
@@ -531,7 +565,8 @@ def _snapshot(task, with_index=False):
     snap = _worktrees_dir() / ".snapshot-{}".format(task["id"])
     shutil.rmtree(snap, ignore_errors=True)
     _git(_worktrees_dir(), "init", "-q", "--bare", "--object-format",
-         _git(task["repo_path"], "rev-parse", "--show-object-format").strip(), str(snap))
+         _git(task["repo_path"], "rev-parse", "--show-object-format").strip(), str(snap),
+         strict=True)
     src = gd / "objects"
     for dirpath, dirnames, filenames in os.walk(src, followlinks=False):
         rel = Path(dirpath).relative_to(src)
@@ -549,13 +584,7 @@ def _snapshot(task, with_index=False):
     (snap / "objects" / "info" / "alternates").write_text(str(main_objects) + "\n")
     sha = _read_ref(gd, task["branch"])
     if sha:
-        _git(snap, "update-ref", "refs/heads/" + task["branch"], sha)
-    if with_index:
-        idx = gd / "index"
-        if idx.is_file() and not idx.is_symlink():
-            shutil.copyfile(idx, snap / "index")
-        if sha:
-            _git(snap, "symbolic-ref", "HEAD", "refs/heads/" + task["branch"])
+        _git(snap, "update-ref", "refs/heads/" + task["branch"], sha, strict=True)
     return snap, sha
 
 
@@ -572,7 +601,10 @@ def _diffstat(task):
     if not _main_sha(task):
         return "", 0, ""
     base, br = task["base_sha"], "refs/heads/" + task["branch"]
-    out = _git(task["repo_path"], "diff", "--stat", "{}...{}".format(base, br)).strip()
+    # Tree-to-tree in the main repo, so the agent's .gitattributes aren't read
+    # and no submodule is entered; gitlinks still count as changed files.
+    out = _git(task["repo_path"], "diff", "--stat", "--no-textconv", "--no-ext-diff",
+               "{}...{}".format(base, br)).strip()
     commits = _git(task["repo_path"], "log", "--oneline", "{}..{}".format(base, br)).strip()
     m = re.search(r"(\d+) files? changed", out)
     return out, int(m.group(1)) if m else 0, commits[:4000]
@@ -585,8 +617,9 @@ def _import(task):
     try:
         if sha and _main_sha(task) != sha:
             ref = "refs/heads/" + task["branch"]
-            _git(task["repo_path"], "-c", "protocol.file.allow=always", "fetch", "-q", "--no-tags",
-                 "--no-write-fetch-head", str(snap), "{0}:{0}".format(ref))
+            _git(task["repo_path"], "-c", "protocol.file.allow=always", "-c", "submodule.recurse=false",
+                 "fetch", "--no-tags", "--no-recurse-submodules", "--no-write-fetch-head",
+                 str(snap), "{0}:{0}".format(ref))
     finally:
         shutil.rmtree(snap, ignore_errors=True)
     return _diffstat(task)
@@ -678,16 +711,32 @@ def _agent_env():
 
 def _deny_reads(task):
     """Paths sandboxed Bash may not read: Yogesh's keys and Jarvis's secrets,
-    plus the main repo's own .env files."""
+    the main repo's own .env files, and his private data (iCloud Drive incl.
+    the vault, Google Drive, ~/Media, Mail, Messages, browser profiles and
+    Claude session transcripts). ~/.claude itself stays readable: Bash
+    sources the CLI's shell snapshot from there."""
     home = Path.home()
-    out = [home / ".secrets", home / ".ssh", home / "Library" / "Keychains", home / ".aws",
+    lib = home / "Library"
+    support = lib / "Application Support"
+    out = [home / ".secrets", home / ".ssh", lib / "Keychains", home / ".aws",
            home / ".config" / "gh", home / ".gnupg", home / ".netrc",
-           config.ROOT / ".env", config.ROOT / "credentials.json", config.ROOT / "data"]
+           config.ROOT / ".env", config.ROOT / "credentials.json", config.ROOT / "data",
+           lib / "Mobile Documents", lib / "CloudStorage", home / "Media",
+           lib / "Messages", lib / "Mail", lib / "Cookies", lib / "Safari",
+           support / "Google" / "Chrome", support / "Firefox", support / "BraveSoftware",
+           support / "Arc", home / ".claude" / "projects"]
+    if config.VAULT_DIR:
+        out.append(Path(config.VAULT_DIR).expanduser())
     try:
         out += [p for p in Path(task["repo_path"]).glob(".env*")]
     except OSError:
         pass
-    return [str(p) for p in out]
+    seen, uniq = set(), []
+    for p in out:
+        if str(p) not in seen:
+            seen.add(str(p))
+            uniq.append(str(p))
+    return uniq
 
 
 def sandbox_settings(task):
@@ -971,15 +1020,24 @@ def cancel(task_id, _confirmed=False):
 
 
 def _uncommitted(task):
-    """Changed files in the clone, checked through a Jarvis-owned snapshot so
-    nothing in the clone's .git can run code. .claude/ (CLI bookkeeping) is
-    ignored."""
-    snap, sha = _snapshot(task, with_index=True)
+    """Changed or untracked files in the clone. Never `git status` on the clone:
+    it recurses into nested repos, whose .git/config the agent writes, and
+    reads global config, so a filter could run as Jarvis. Instead a
+    Jarvis-owned snapshot gets a fresh index from the committed tree and
+    `ls-files` compares content in-process with no config but Jarvis's
+    (STRICT_GIT), so no filter, textconv or hook is defined. Gitlinks are
+    compared by HEAD only. .claude/ (CLI bookkeeping) is ignored."""
+    snap, sha = _snapshot(task)
     try:
         if not sha:
             return "its branch is missing in the clone"
-        return _git(task["worktree"], "status", "--porcelain", "--", ".", ":(exclude).claude",
-                    git_dir=snap, work_tree=task["worktree"]).strip()
+        wt = task["worktree"]
+        _git(wt, "read-tree", sha, git_dir=snap, work_tree=wt, strict=True)
+        out = _git(wt, "ls-files", "-z", "--modified", "--deleted", "--others",
+                   "--exclude-standard", git_dir=snap, work_tree=wt, strict=True)
+        changed = sorted({p for p in out.split("\0")
+                          if p and p != ".claude" and not p.startswith(".claude/")})
+        return "\n".join(changed)
     finally:
         shutil.rmtree(snap, ignore_errors=True)
 

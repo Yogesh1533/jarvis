@@ -853,7 +853,9 @@ TOOL_SCHEMAS = [
             "meeting_alerts: off|5|10|15 minutes of warning before calendar "
             "events. briefing: off or a time like 07:30 for the spoken morning "
             "briefing (it plays the first time the user is at their Mac after "
-            "that time, before noon)."
+            "that time, before noon). wrap: off or a time like 20:00 for the "
+            "spoken evening wrap. wrap_to_vault: on|off, write the evening wrap "
+            "into today's daily note."
         ),
         "input_schema": {
             "type": "object",
@@ -863,6 +865,7 @@ TOOL_SCHEMAS = [
                     "enum": [
                         "patience", "barge_in", "fillers", "speak", "auto_mood", "edge", "banter",
                         "nudges", "theme", "wake", "conversation", "meeting_alerts", "briefing",
+                        "wrap", "wrap_to_vault",
                     ],
                 },
                 "value": {"type": "string", "description": "New value; 'on'/'off' for switches"},

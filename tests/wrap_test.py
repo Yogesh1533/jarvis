@@ -119,6 +119,19 @@ check("gmail failure skips only that section", "Done today" in out2 and "Commits
       and "Might need a reply" not in out2)
 check("no traceback text", "Traceback" not in out2 and "exploded" not in out2)
 
+from jarvis import settings as _settings  # noqa: E402
+
+_settings.update(wrap_to_vault=False)
+out3 = wrap.get()
+check("vault off: wrap_get ends with the don't-write line",
+      out3.rstrip().endswith("(wrap_to_vault is off: don't write this to the vault.)"))
+_settings.update(wrap_to_vault=True)
+check("vault on: no don't-write line", "wrap_to_vault is off" not in wrap.get())
+prompt_md = (Path(__file__).resolve().parent.parent / "config"
+             / "jarvis-voice-assistant-system-prompt.md").read_text(encoding="utf-8")
+check("system prompt points at the wrap_get vault line",
+      "wrap_to_vault is off" in prompt_md)
+
 print("== proactive state ==")
 from jarvis import proactive  # noqa: E402
 

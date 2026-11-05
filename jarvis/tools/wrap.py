@@ -4,11 +4,14 @@ import os
 import subprocess
 from datetime import datetime, timedelta
 
+from .. import settings
 from . import dev, gcal, gmail, projects, tasks
 from .db import connect
 
 _GIT_TIMEOUT = 5
 _MAX_COMMITS = 5
+# The model can't see settings, so wrap_get tells it when not to write the note.
+VAULT_OFF = "(wrap_to_vault is off: don't write this to the vault.)"
 _REPLY_QUERY = "is:unread newer_than:1d -category:promotions -category:social -category:updates"
 
 
@@ -100,4 +103,7 @@ def get():
         _section("Might need a reply", _replies),
     ]
     parts = [p for p in parts if p]
-    return "\n\n".join(parts) if parts else "Nothing to report for today."
+    out = "\n\n".join(parts) if parts else "Nothing to report for today."
+    if not settings.get().get("wrap_to_vault", True):
+        out += "\n\n" + VAULT_OFF
+    return out
