@@ -1,5 +1,5 @@
 import { audio } from "./audio";
-import { useStore, type Mode } from "./store";
+import { useStore, type DevTask, type Mode } from "./store";
 import type { FaceId } from "../faces/types";
 
 /*
@@ -43,7 +43,7 @@ export function startDemo() {
     speak(false);
     window.removeEventListener("keydown", onKey, true);
     window.removeEventListener("pointerdown", onClick, true);
-    s().set({ cards: [], caption: saved.caption, drawer: null });
+    s().set({ cards: [], caption: saved.caption, drawer: null, demoDevtasks: null });
     s().setLocal({ face: saved.face });
     mode(saved.mode === "boot" ? "idle" : saved.mode);
     stop = null;
@@ -95,6 +95,23 @@ export function startDemo() {
   });
   at(18500, () => react("laugh"));
   at(21500, () => { speak(false); mode("idle"); s().set({ cards: [] }); });
+
+  // Scene 2b: a coding agent works in the Agents panel (fake rows, no backend).
+  const stamp = (offsetS: number) => {
+    const d = new Date(Date.now() + offsetS * 1000);
+    const p = (n: number) => String(n).padStart(2, "0");
+    return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}:${p(d.getSeconds())}`;
+  };
+  const started = stamp(0);
+  const job = (state: "running" | "done", step: string, extra: Partial<DevTask> = {}): DevTask[] => [{
+    id: 1, project: "demo-app", instruction: "Add a dark mode toggle to settings",
+    branch: null, state, started_at: started, finished_at: null, last_step: step, summary: null, diffstat: null, ...extra,
+  }];
+  const steps = ["Reading the codebase", "Editing Settings.tsx", "Running tests"];
+  at(12600, () => s().set({ demoDevtasks: job("running", "Starting up") }));
+  steps.forEach((st, i) => at(14500 + i * 2200, () => s().set({ demoDevtasks: job("running", st) })));
+  at(14500 + steps.length * 2200, () =>
+    s().set({ demoDevtasks: job("done", "Done", { finished_at: stamp(0), branch: "jarvis/dark-mode-a1b2", diffstat: "3 files, +42 -7" }) }));
 
   // Scene 3: the face tour.
   FACES_TOUR.forEach(([face, line], i) => {
