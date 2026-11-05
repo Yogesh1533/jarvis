@@ -184,4 +184,43 @@ try:
 finally:
     os.stat = real_stat
 
+print("== tool registration and files exclusion ==")
+from jarvis import tools  # noqa: E402
+from jarvis.tools import files  # noqa: E402
+
+names = [s["name"] for s in tools.TOOL_SCHEMAS]
+check("vault and project tools registered", all(n in names for n in ("vault_search", "vault_read", "vault_note", "projects_status")))
+note_schema = next(s for s in tools.TOOL_SCHEMAS if s["name"] == "vault_note")["input_schema"]
+check("vault_note schema hides _now", "_now" not in note_schema["properties"] and note_schema["properties"]["where"]["enum"] == ["daily", "inbox"])
+out, is_err = tools.execute("vault_note", {"text": "via registry", "_now": "2020-01-01"}, lambda p: False)
+today = datetime.now().strftime("%Y-%m-%d")
+check("execute strips _now", not is_err and today in out and "2020" not in out and (VDIR / "Daily" / (today + ".md")).exists())
+out, is_err = tools.execute("vault_search", {"query": "logo"}, lambda p: False)
+check("vault_search via execute", not is_err and "Café brief" in out)
+
+config.FILES_ROOTS = [root.resolve()]
+try:
+    r = files.read(str(VDIR / "People" / "secret.md"))
+    refused = "secret sauce" not in r
+except Exception:
+    refused = True
+check("files.read refuses excluded vault path", refused)
+try:
+    files.open_file(str(VDIR / "People" / "secret.md"))
+    refused = False
+except Exception:
+    refused = True
+check("files.open refuses excluded vault path", refused)
+real_find = files._find
+files._find = lambda r, q: [str(VDIR / "People" / "secret.md"), str(VDIR / "Projects.md")]
+try:
+    res = files.search("secret")
+finally:
+    files._find = real_find
+check("files.search drops excluded vault paths", "secret.md" not in res and "Projects.md" in res)
+check("files.read still reads normal vault file", "all the things" in files.read(str(VDIR / "Projects.md")))
+config.VAULT_DIR = root / "missing-vault"
+check("files.read works when vault missing", "outside" in files.read(str(root / "outside.md")))
+config.VAULT_DIR = VDIR
+
 print("ALL {} CHECKS PASSED".format(len(PASS)))
