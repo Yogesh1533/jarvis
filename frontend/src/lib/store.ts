@@ -87,6 +87,8 @@ export interface ServerSettings {
   conversation: "brief" | "open";
   meeting_alerts: "off" | "5" | "10" | "15";
   briefing: string; // "off" or "HH:MM"
+  wrap: string; // "off" or "HH:MM"
+  wrap_to_vault: boolean;
   fillers: boolean;
   speak: boolean;
   auto_mood: boolean;
@@ -163,7 +165,7 @@ function loadLocal(): LocalSettings {
 
 const SERVER_DEFAULTS: ServerSettings = {
   theme: "arc", mood: "classic", voice: "", patience: "balanced",
-  barge_in: true, wake: "normal", conversation: "open", meeting_alerts: "5", briefing: "07:00", fillers: true, speak: true, auto_mood: false, edge: "playful", banter: true, nudges: true, model: "",
+  barge_in: true, wake: "normal", conversation: "open", meeting_alerts: "5", briefing: "07:00", wrap: "off", wrap_to_vault: true, fillers: true, speak: true, auto_mood: false, edge: "playful", banter: true, nudges: true, model: "",
 };
 
 let seq = 1;

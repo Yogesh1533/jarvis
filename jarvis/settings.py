@@ -28,6 +28,8 @@ DEFAULTS = {
     "conversation": "open",  # after replying, keep listening briefly or for a while
     "meeting_alerts": "5",   # minutes of warning before calendar events, or "off"
     "briefing": "07:00",     # morning briefing from this time, or "off"
+    "wrap": "off",           # evening wrap from this time, or "off"
+    "wrap_to_vault": True,   # write the wrap into today's daily note
     "model": "",             # Claude model for the next reply; "" = LLM_MODEL from .env
 }
 
@@ -69,6 +71,17 @@ WAKE_THRESHOLDS = {"low": 0.65, "high": 0.32}
 # Seconds Jarvis keeps listening for a follow-up after it replies.
 # "brief" honours FOLLOWUP_WINDOW from .env.
 CONVERSATION_WINDOW = {"open": 20.0}
+
+
+def _clock(key, value, example):
+    """'off' or a time of day, normalised to HH:MM."""
+    value = str(value).strip().lower()
+    if value != "off":
+        m = re.fullmatch(r"(\d{1,2}):(\d{2})", value)
+        if not m or int(m.group(1)) > 23 or int(m.group(2)) > 59:
+            raise ValueError("{} must be 'off' or a time like {}".format(key, example))
+        value = "{:02d}:{}".format(int(m.group(1)), m.group(2))
+    return value
 
 
 def model_id():
@@ -123,12 +136,9 @@ def update(**changes):
             if value not in CHOICES[key]:
                 raise ValueError("meeting_alerts must be one of: off, 5, 10, 15")
         elif key == "briefing":
-            value = str(value).strip().lower()
-            if value != "off":
-                m = re.fullmatch(r"(\d{1,2}):(\d{2})", value)
-                if not m or int(m.group(1)) > 23 or int(m.group(2)) > 59:
-                    raise ValueError("briefing must be 'off' or a time like 07:30")
-                value = "{:02d}:{}".format(int(m.group(1)), m.group(2))
+            value = _clock(key, value, "07:30")
+        elif key == "wrap":
+            value = _clock(key, value, "20:00")
         elif key in CHOICES and value not in CHOICES[key]:
             raise ValueError("{} must be one of: {}".format(key, ", ".join(CHOICES[key])))
         elif key == "model" and value and value not in MODELS:

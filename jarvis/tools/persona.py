@@ -17,6 +17,8 @@ _LABELS = {
     "conversation": "how long I keep listening after I answer",
     "meeting_alerts": "warnings before your meetings (minutes)",
     "briefing": "when your morning briefing starts",
+    "wrap": "when your evening wrap starts",
+    "wrap_to_vault": "writing the evening wrap into your daily note",
 }
 
 

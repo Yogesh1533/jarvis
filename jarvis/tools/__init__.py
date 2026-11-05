@@ -690,6 +690,15 @@ TOOL_SCHEMAS = [
     },
     # ── Brain vault & projects ─────────────────────────────────────
     {
+        "name": "wrap_get",
+        "description": (
+            "Gather the evening wrap in one call: tasks done today, what's due "
+            "tomorrow, today's commits, finished coding agents, tomorrow's calendar "
+            "and emails that may need a reply. Use for 'wrap up my day', 'how did today go'."
+        ),
+        "input_schema": {"type": "object", "properties": {}},
+    },
+    {
         "name": "vault_search",
         "description": (
             "Search the user's Obsidian vault (their notes / brain) by title and "
@@ -946,7 +955,7 @@ def _handlers():
     from . import (
         apple, briefing, dev, files, gcal, gmail, hud, mac, media, memory, persona,
         prep, projects, recall, reminders, screen, skills, system, tasks, timers, vault,
-        weather, websearch,
+        weather, websearch, wrap,
     )
 
     return {
@@ -1010,6 +1019,7 @@ def _handlers():
         "vault_read": vault.read,
         "vault_note": vault.note,
         "projects_status": projects.status,
+        "wrap_get": wrap.get,
         "dev_task_start": dev.start,
         "dev_task_status": dev.status,
         "dev_task_list": dev.list_tasks,

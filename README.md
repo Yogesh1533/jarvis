@@ -293,6 +293,11 @@ Heads-ups, or just say "warn me 10 minutes before meetings"):
 - **Morning briefing**: from 7:00 (or a time you choose), the first time you
   sit down at your Mac before noon, Jarvis reads you the weather, your first
   meetings and the email that matters. Once a day.
+- **Evening wrap**: off by default; set `wrap` to a time (Settings, or "start
+  my wrap at 8pm"). Once a day after that time, when you're at your Mac,
+  Jarvis gives a 30 second rundown: what got done, what's tomorrow and emails
+  that may need a reply, then adds it under `## Wrap` in today's vault note
+  (`wrap_to_vault`). Say "wrap up my day" any time to get it on demand.
 
 ## 6. Voice — pick your TTS
 

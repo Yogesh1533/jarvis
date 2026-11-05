@@ -31,6 +31,13 @@ BRIEFING_PROMPT = (
     "weather, their first meetings, anything due, and only the emails that "
     "look important. About thirty seconds; skip empty sections.)"
 )
+WRAP_PROMPT = (
+    "(Automatic evening wrap: call wrap_get, then give a ~30 second spoken "
+    "rundown: what got done, what's tomorrow, and up to 3 emails that look like "
+    "they need a reply. Show it as a HUD card. Then call vault_note(section='Wrap') "
+    "with a short summary for today. Offer to draft replies; don't draft unasked.)"
+)
+WRAP_NO_VAULT = " Skip the vault_note step."
 
 
 NUDGE_GAP = 90 * 60         # at most one unprompted nudge every 90 minutes
@@ -121,6 +128,17 @@ def briefing_due(now, setting, last_date, idle):
     return idle is not None and idle < PRESENT_IDLE
 
 
+def wrap_due(now, setting, last_date, idle):
+    """Should the evening wrap play now? Like briefing_due, but no cutoff:
+    midnight ends the day (the date changes) on its own."""
+    if setting == "off" or last_date == now.date().isoformat():
+        return False
+    hour, minute = map(int, setting.split(":"))
+    if now < now.replace(hour=hour, minute=minute, second=0, microsecond=0):
+        return False
+    return idle is not None and idle < PRESENT_IDLE
+
+
 class Proactive:
     """Polls the calendar and the clock on a daemon thread. `hub` provides
     announce(kind, text, speak), brief(prompt) -> bool and free() -> bool."""
@@ -150,6 +168,8 @@ class Proactive:
             self._meetings(int(prefs["meeting_alerts"]))
         if prefs["briefing"] != "off":
             self._briefing(prefs["briefing"])
+        if prefs["wrap"] != "off":
+            self._wrap(prefs["wrap"], prefs["wrap_to_vault"])
         if prefs["nudges"]:
             self._nudge()
 
@@ -213,3 +233,12 @@ class Proactive:
             return   # busy or nobody's window is open; try again shortly
         self._save_state("briefing", now.date().isoformat())
 
+    # -- evening wrap ----------------------------------------------------
+    def _wrap(self, setting, to_vault=True):
+        now = datetime.now()
+        if not wrap_due(now, setting, self._load_state("wrap"), idle_seconds()):
+            return
+        prompt = WRAP_PROMPT if to_vault else WRAP_PROMPT[:-1] + WRAP_NO_VAULT + ")"
+        if not self.hub.free() or not self.hub.brief(prompt, label="Your evening wrap"):
+            return
+        self._save_state("wrap", now.date().isoformat())

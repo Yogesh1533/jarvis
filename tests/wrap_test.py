@@ -134,4 +134,79 @@ check("briefing stored", p._load_state("briefing") == "2026-11-05"
       and p._last_briefing() == "2026-11-05")
 check("no temp files left", [f.name for f in root.glob("proactive*")] == ["proactive.json"])
 
+print("== wrap trigger ==")
+from jarvis import settings  # noqa: E402
+
+today = datetime.now().date().isoformat()
+
+
+def at(h, m):
+    return datetime.now().replace(hour=h, minute=m, second=0, microsecond=0)
+
+
+check("due after the set time", proactive.wrap_due(at(20, 5), "20:00", None, 10))
+check("not due before the set time", not proactive.wrap_due(at(19, 59), "20:00", None, 10))
+check("not due twice a day", not proactive.wrap_due(at(20, 5), "20:00", today, 10))
+check("off never fires", not proactive.wrap_due(at(20, 5), "off", None, 10))
+check("not due when away", not proactive.wrap_due(at(20, 5), "20:00", None, 300))
+check("not due with unknown idle", not proactive.wrap_due(at(20, 5), "20:00", None, None))
+check("late evening still fires", proactive.wrap_due(at(23, 50), "20:00", None, 10))
+
+config.DB_PATH = root / "set" / "jarvis.db"
+settings._cache = None
+check("wrap defaults off, vault on", settings.get()["wrap"] == "off" and settings.get()["wrap_to_vault"] is True)
+check("wrap time is normalised", settings.update(wrap="8:30")["wrap"] == "08:30")
+try:
+    settings.update(wrap="25:00")
+    bad = False
+except ValueError as exc:
+    bad = "wrap must be 'off' or a time like 20:00" in str(exc)
+check("bad wrap time rejected", bad)
+try:
+    settings.update(briefing="25:00")
+    bad = False
+except ValueError as exc:
+    bad = "briefing must be 'off' or a time like 07:30" in str(exc)
+check("briefing error text unchanged", bad)
+
+
+class FakeHub:
+    def __init__(self):
+        self.prompts = []
+
+    def free(self):
+        return True
+
+    def brief(self, prompt, label=None):
+        self.prompts.append((prompt, label))
+        return True
+
+    def announce(self, *a, **k):
+        pass
+
+
+settings.update(wrap="00:00", wrap_to_vault=False, briefing="off", nudges=False, meeting_alerts="off")
+proactive.idle_seconds = lambda: 5
+hub = FakeHub()
+q = proactive.Proactive(hub)
+q._state_path = root / "p2.json"
+q.tick()
+check("tick runs the wrap once", len(hub.prompts) == 1)
+check("wrap prompt calls wrap_get and skips the vault",
+      "wrap_get" in hub.prompts[0][0] and "Skip the vault_note step" in hub.prompts[0][0])
+check("wrap label", hub.prompts[0][1] == "Your evening wrap")
+q.tick()
+check("second tick doesn't repeat", len(hub.prompts) == 1)
+check("wrap date saved", q._load_state("wrap") == today)
+settings.update(wrap_to_vault=True)
+hub2 = FakeHub()
+q2 = proactive.Proactive(hub2)
+q2._state_path = root / "p3.json"
+q2.tick()
+check("vault on: no skip sentence", "Skip the vault_note step" not in hub2.prompts[0][0]
+      and "vault_note" in hub2.prompts[0][0])
+
+from jarvis import tools  # noqa: E402
+check("wrap_get registered", "wrap_get" in tools._handlers() and any(t["name"] == "wrap_get" for t in tools.TOOL_SCHEMAS))
+
 print("ALL {} CHECKS PASSED".format(len(PASS)))

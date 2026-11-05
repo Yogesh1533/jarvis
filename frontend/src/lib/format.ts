@@ -87,6 +87,7 @@ const TOOL_LABELS: Record<string, string> = {
   vault_read: "Reading a note",
   vault_note: "Adding to your vault",
   projects_status: "Checking your projects",
+  wrap_get: "Wrapping up your day",
 };
 
 // When a Tavily key is set, web tools run on Tavily: say so in the trace.
