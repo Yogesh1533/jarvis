@@ -257,6 +257,7 @@ export default function App() {
     setReady(true);
     useStore.getState().setMode(serverMode);
     if (useStore.getState().local.mic) setMic(true);
+    link.send({ type: "booted" });
   };
 
   if (layout === "orb") {

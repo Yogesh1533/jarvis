@@ -22,6 +22,7 @@ DEFAULTS = {
     "auto_mood": False,      # let Jarvis pick a mood from your tone
     "edge": "playful",       # how hard the friend moods tease: playful / spicy
     "banter": True,          # callbacks to what it remembers about you
+    "greeting": True,        # "Hey boss, good morning. How can I help?" when the app first opens
     "nudges": True,          # speaks up on its own (late night, long sessions, welcome back)
     "wake": "normal",        # wake-word sensitivity: low / normal / high
     "conversation": "open",  # after replying, keep listening briefly or for a while

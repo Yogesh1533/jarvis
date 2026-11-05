@@ -511,6 +511,7 @@ class Hub:
         self.loop = None
         self.outbox = None
         self.clients = set()
+        self.greeted = False
         self.mic_owner = None               # the one window whose mic we listen to
         self.assistant = None
         self.turn_lock = threading.Lock()   # one turn at a time
@@ -925,6 +926,19 @@ class Hub:
             self.voice.pause()
             self.say(text, kind="say", then="idle", speak=True)
 
+    def greet(self):
+        """Spoken hello the first time the app opens (once per server launch)."""
+        if self.greeted or not settings.get().get("greeting", True) or not self.free():
+            return
+        self.greeted = True
+        hour = time.localtime().tm_hour
+        part = "morning" if hour < 12 else "afternoon" if hour < 17 else "evening"
+        if hour >= 22 or hour < 4:
+            part = "evening"
+        text = "Hey boss, good {}. How can I help you today?".format(part)
+        self.voice.pause()
+        self.say(text, kind="say", then="idle", speak=True)
+
     def free(self):
         """Nothing going on, and a window open to hear Jarvis."""
         return bool(self.clients) and self.state == "idle" and not self.turn_lock.locked()
@@ -987,6 +1001,8 @@ class Hub:
             # barge-in meanwhile, and start again when it carries on.
             if self.state == "speaking":
                 self.voice.watch("speaking" if not data.get("on") else None)
+        elif kind == "booted":
+            self.greet()
         elif kind == "playback_done":
             self.playback_done(data.get("id"))
         elif kind == "confirm":
