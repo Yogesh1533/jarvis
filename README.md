@@ -436,6 +436,7 @@ python tests/vault_test.py      # vault search/read/note, exclusions, iCloud pla
 python tests/projects_test.py   # Projects.md parsing and git status
 python tests/dev_test.py        # coding-agent guard, sandbox config, clone/import, cleanup
 python tests/wrap_test.py       # evening wrap sections, schedule, settings
+python tests/web_guard_test.py  # HUD server refuses other websites and DNS rebinding
 ```
 
 Runs offline (fake model, fake Gmail): exercises tasks, reminders, memory,
