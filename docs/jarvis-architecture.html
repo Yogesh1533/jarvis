@@ -1,0 +1,64 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><title>J.A.R.V.I.S. architecture</title>
+<style>
+*{box-sizing:border-box;margin:0}
+body{width:2000px;height:879px;background:radial-gradient(ellipse at top,#0e1c33,#070d1a 70%);font-family:-apple-system,"Inter","Helvetica Neue",Arial,sans-serif;color:#dfe9f7;padding:56px 66px;position:relative;overflow:hidden}
+h1{font-size:44px;font-weight:700;letter-spacing:.06em;color:#fff}
+h1 span{color:#5fd0ff}
+.sub{font-size:21px;color:#9fb2cc;margin-top:12px}
+.cols{display:grid;grid-template-columns:1.25fr .95fr .9fr;gap:34px;margin-top:34px}
+.col{border:1.5px solid #243a5c;border-radius:22px;padding:30px 28px 26px;position:relative;height:590px}
+.col>.tag{position:absolute;top:-14px;left:26px;background:#08101f;padding:0 14px;font-size:16px;letter-spacing:.28em;font-weight:600}
+.mac{border-color:#2c4c7a}.mac>.tag{color:#5fd0ff}
+.world{border-color:#3a6a52}.world>.tag{color:#6fe3a1}
+.brain{border-color:#5a3f86}.brain>.tag{color:#b794ff}
+.row{display:flex;align-items:center;gap:14px;margin-bottom:16px}
+.box{border:1.5px solid #243a5c;border-radius:14px;background:#0b1527;padding:14px 18px;flex:1}
+.box b{display:block;font-size:20px;color:#fff;margin-bottom:4px}
+.box i{font-style:normal;font-size:16px;color:#9fb2cc;line-height:1.4}
+.arrow{color:#6d84a8;font-size:24px}
+.gate{border-color:#8a6420}.gate b{color:#ffb84d}
+.hud b{color:#5fd0ff}
+.grid2{display:grid;grid-template-columns:1fr 1fr;gap:14px}
+.world .box{border-color:#2b4d3d}
+.world .box b{color:#8ff0b8}
+.brain .box{border-color:#3d2e63;position:relative}
+.brain .box b{color:#d6c2ff}
+.chip{position:absolute;top:12px;right:14px;font-size:12px;letter-spacing:.14em;border:1px solid #8a7ab8;border-radius:6px;padding:2px 8px;color:#e6dcff}
+.vault{margin-top:4px;border:1.5px dashed #5a3f86;border-radius:14px;padding:12px 16px;font-size:16px;color:#c9b8f0;line-height:1.45}
+.foot{position:absolute;left:66px;bottom:34px;font-size:19px}
+.foot .a{color:#5fd0ff}.foot .b{color:#b8f26b;margin-left:22px}
+</style></head><body>
+<h1>J.A.R.V.I.S. <span>your assistant, your world</span></h1>
+<div class="sub">A private voice assistant for your Mac. Local senses, Claude by default, your notes and code within reach.</div>
+<div class="cols">
+  <div class="col mac"><div class="tag">YOUR MAC</div>
+    <div class="row">
+      <div class="box"><b style="text-align:center">Wake word</b><i style="display:block;text-align:center">openWakeWord</i></div><span class="arrow">→</span>
+      <div class="box"><b style="text-align:center">Speech to text</b><i style="display:block;text-align:center">Whisper on the GPU</i></div><span class="arrow">→</span>
+      <div class="box"><b style="text-align:center">Brain</b><i style="display:block;text-align:center">Claude, or your pick</i></div>
+    </div>
+    <div class="grid2">
+      <div class="box gate"><b>Confirmation gate</b><i>Sending email, deleting, editing shared meetings, starting a coding agent: needs your yes. Enforced in code; the model can't approve itself.</i></div>
+      <div class="box"><b>74 tools</b><i>Gmail, Calendar, tasks, reminders, timers, notes, files, Mac control, music, web, vault, projects</i></div>
+      <div class="box"><b>Memory + recall</b><i>Markdown memories; search runs on local embeddings</i></div>
+      <div class="box"><b>Meeting prep</b><i>Event, attendee email, memories and a company lookup, fetched in parallel</i></div>
+      <div class="box"><b>Voice out</b><i>Piper TTS, five moods, barge-in</i></div>
+      <div class="box hud"><b>HUD + Agents panel</b><i>Live panels, which model answered and why, and each coding agent's progress</i></div>
+    </div>
+  </div>
+  <div class="col world"><div class="tag">YOUR WORLD</div>
+    <div class="box" style="margin-bottom:16px"><b>Brain vault</b><i>Search, read and add to your Obsidian notes. Insert-only: never overwrites or deletes. People and Life stay off-limits; undownloaded iCloud files are skipped.</i></div>
+    <div class="box" style="margin-bottom:16px"><b>Coding agents by voice</b><i>"In todo-app, add X": a Claude agent works in a throwaway clone on its own branch, inside an OS sandbox. Commits, never pushes. Jarvis imports the branch when it's done.</i></div>
+    <div class="box" style="margin-bottom:16px"><b>Projects</b><i>Status from Projects.md plus git: branch, dirty files, agent branches</i></div>
+    <div class="box"><b>Evening wrap</b><i>What got done, today's commits and agent work, tomorrow's calendar, emails that may need a reply. Saved to today's daily note.</i></div>
+  </div>
+  <div class="col brain"><div class="tag">BRAINS</div>
+    <div class="box" style="margin-bottom:14px"><span class="chip">DEFAULT</span><b>Claude via your plan</b><i>Agent SDK, no API key needed</i></div>
+    <div class="box" style="margin-bottom:14px"><span class="chip">API</span><b>Claude via API key</b><i>Same tools, memory and gate</i></div>
+    <div class="box" style="margin-bottom:14px"><span class="chip">OPEN</span><b>NVIDIA Nemotron on Nebius</b><i>Rules route each turn across Lightning, Super 120B, Ultra 550B and a vision model</i></div>
+    <div class="vault"><b style="color:#d6c2ff">Masks before anything leaves</b><br>On the Nemotron brain, emails, phone and card numbers become [EMAIL_1], [PHONE_1] and are restored on the Mac. Tool results are framed as data, not instructions.</div>
+  </div>
+</div>
+<div class="foot"><span class="a">Stays local:</span> microphone audio, wake word, transcription, memory search, your vault and repos. <span class="b">Goes to the brain you pick:</span> the conversation text and tool results.</div>
+</body></html>
