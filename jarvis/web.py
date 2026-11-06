@@ -45,6 +45,7 @@ from . import config, hud_bridge, moods, proactive, settings, tools
 from .assistant import Assistant
 from .audio import stt
 from .audio.turns import CHUNK, TurnDetector, ends_conversation, interruption, judge
+from .localguard import LocalOnly
 from .tools import history, media, recall, reminders, timers
 from .voice import is_affirmative
 
@@ -1064,6 +1065,7 @@ async def lifespan(_app):
 
 
 app = FastAPI(title="Jarvis", lifespan=lifespan)
+app.add_middleware(LocalOnly)   # Host/Origin check: no websites, no DNS rebinding
 
 
 @app.middleware("http")
