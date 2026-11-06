@@ -3,7 +3,8 @@
 An always-on, wake-word voice assistant that runs on your own machine. Say
 **"Hey Jarvis"**, ask for something, and it answers out loud — with real
 access to your Gmail, Google Calendar, a local task list, spoken reminders,
-web search, and a persistent memory it maintains about you.
+web search, your Obsidian vault, coding agents that work on your repos, and a
+persistent memory it maintains about you.
 
 - **Private by design** — the microphone is processed locally by
   [openWakeWord](https://github.com/dscripka/openWakeWord); no audio leaves
@@ -65,6 +66,8 @@ model"). Design details are in [ARCHITECTURE.md](ARCHITECTURE.md#three-llm-backe
   that down", "what's jarvis up to": Jarvis searches and reads the Brain
   vault, appends to today's daily note or the inbox (it never overwrites or
   deletes a note), and reads project status from `Projects.md` plus git.
+  Folders in `VAULT_EXCLUDE` (People, Life, Templates by default) are never
+  read or searched. Point `VAULT_DIR` in `.env` at your vault.
 - **Coding agents by voice.** "In jarvis, add a dark mode toggle" starts a
   Claude Agent SDK agent on its own branch in a throwaway clone after you
   approve it on screen. It commits there, never pushes, and Jarvis tells you
@@ -73,7 +76,14 @@ model"). Design details are in [ARCHITECTURE.md](ARCHITECTURE.md#three-llm-backe
   Messages and browser data are denied. Other files you can read are still
   readable, and github.com is reachable, so treat an agent run on an
   untrusted repo as able to leak those (see ARCHITECTURE.md). Settings:
-  `DEV_ROOTS`, `DEV_AGENT_*` in `.env`.
+  `DEV_ROOTS`, `DEV_AGENT_*` in `.env`. The HUD's Agents panel shows each
+  run live; "how's the agent doing", "cancel it" and "clean up that agent"
+  work by voice. The branch lands in your repo when the run ends, and
+  cleanup (confirmed on screen) deletes only the clone.
+- **Evening wrap.** "Wrap up my day" gives a ~30 second rundown: tasks done,
+  what's due, today's commits, agent results, tomorrow's calendar and emails
+  that may need a reply, then saves it under `## Wrap` in today's daily
+  note. It can also play on its own once an evening (see Google, below).
 - **A demo profile.** `scripts/seed_demo.py` fills a separate demo Google
   account, tasks, memories and files with fictional data, and
   `scripts/run_demo.sh` launches the app on that profile, so recordings
@@ -160,7 +170,7 @@ prompt. This is the fastest way to test changes to the system prompt or tools.
 A full-screen, Iron Man–style interface over the same brain: an animated
 reactor that orbits, spirals and pulses as Jarvis listens, thinks and
 speaks, with live panels for your agenda, tasks, timers, reminders, inbox,
-system vitals and memories.
+system vitals, memories and running coding agents.
 
 Build the front-end once (needs Node 18+):
 
@@ -422,6 +432,10 @@ HUD, or by saying "use Opus" / "back to the default model".
 
 ```bash
 python tests/smoke_test.py
+python tests/vault_test.py      # vault search/read/note, exclusions, iCloud placeholders
+python tests/projects_test.py   # Projects.md parsing and git status
+python tests/dev_test.py        # coding-agent guard, sandbox config, clone/import, cleanup
+python tests/wrap_test.py       # evening wrap sections, schedule, settings
 ```
 
 Runs offline (fake model, fake Gmail): exercises tasks, reminders, memory,
