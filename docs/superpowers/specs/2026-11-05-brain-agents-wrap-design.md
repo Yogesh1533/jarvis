@@ -69,7 +69,7 @@ and writes it into today's vault note.
 - `VAULT_EXCLUDE`: comma-separated folder names (relative to the vault) that
   are never searched or read. Defaults to
   `.obsidian,.trash,Templates,People,Life` (Yogesh's choice). Everything
-  else, including `USER.md`, `CLAUDE.md`, `Digipearl/` and `AIBI/`, is readable.
+  else, including `USER.md`, `CLAUDE.md`, `Acme/` and `Clients/`, is readable.
   Templates are still used internally to create daily notes, but they're
   never returned by search or read.
 - `DEV_ROOTS`: defaults to `~/Developer`. Shared with Feature 2.

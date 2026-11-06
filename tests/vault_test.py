@@ -47,12 +47,12 @@ created: {{date}}
 
 root = Path(tempfile.mkdtemp(prefix="jarvis-vault-test-"))
 VDIR = root / "Brain"
-for d in ("Daily", "Templates", "People", "Digipearl", "00 Inbox"):
+for d in ("Daily", "Templates", "People", "Acme", "00 Inbox"):
     (VDIR / d).mkdir(parents=True)
 (VDIR / "Templates" / "Daily.md").write_text(DAILY_TEMPLATE, encoding="utf-8")
 (VDIR / "People" / "secret.md").write_text("# secret\nthe secret sauce\n", encoding="utf-8")
 (VDIR / "Projects.md").write_text("# Dashboard\nall the things\n", encoding="utf-8")
-(VDIR / "Digipearl" / "Café brief.md").write_text("# Café brief\nlogo due Friday\n", encoding="utf-8")
+(VDIR / "Acme" / "Café brief.md").write_text("# Café brief\nlogo due Friday\n", encoding="utf-8")
 (root / "outside.md").write_text("outside\n", encoding="utf-8")
 (root / "x.md").write_text("x\n", encoding="utf-8")
 os.symlink(root / "x.md", VDIR / "Daily" / "link.md")
@@ -88,7 +88,7 @@ for rel in ("people/secret.md", "PEOPLE/secret.md", "templates/Daily.md"):
         ok = True
     check("read refuses case variant " + rel, ok)
 check("case variants not searchable", "sauce" not in vault.search("sauce") and "secret" not in vault.search("SECRET"))
-check("read round-trips unicode and spaces", "logo due Friday" in vault.read("Digipearl/Café brief.md"))
+check("read round-trips unicode and spaces", "logo due Friday" in vault.read("Acme/Café brief.md"))
 (VDIR / "Big.md").write_text("a" * 9000, encoding="utf-8")
 big = vault.read("Big.md")
 check("read cuts long notes", "…(cut, note is 9000 chars)" in big and len(big) < 8100)
