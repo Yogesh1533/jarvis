@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { api, usePanelData } from "../lib/api";
 import { ask } from "../lib/actions";
 import { countdown, dayLabel, parseLocal, relative } from "../lib/format";
-import { useStore, type NowPlaying } from "../lib/store";
+import { useStore, type DevTask, type NowPlaying } from "../lib/store";
 import { Empty, Icon, Panel, PanelStatus } from "./Panel";
 
 function useNow(ms = 1000) {
@@ -116,6 +116,53 @@ export function TasksPanel() {
           <Icon name="plus" />
         </button>
       </form>
+    </Panel>
+  );
+}
+
+// ── Agents ─────────────────────────────────────────────────────────
+function elapsed(t: DevTask, now: Date) {
+  const end = t.finished_at ? parseLocal(t.finished_at) : now;
+  const secs = (end.getTime() - parseLocal(t.started_at).getTime()) / 1000;
+  return Number.isFinite(secs) ? countdown(secs) : "–";
+}
+
+export function AgentsPanel() {
+  // Poll slowly while something runs, in case the websocket drops mid-run.
+  const [poll, setPoll] = useState(0);
+  const res = usePanelData<DevTask[]>("/api/devtasks", "agents", poll);
+  const demo = useStore((s) => s.demoDevtasks);
+  const tasks = demo ?? res.data ?? [];
+  const running = tasks.filter((t) => t.state === "running").length;
+  const wantPoll = !demo && running > 0 ? 15_000 : 0;
+  useEffect(() => setPoll(wantPoll), [wantPoll]);
+  const now = useNow(running ? 1000 : 60_000);
+
+  return (
+    <Panel title="Agents" meta={running ? `${running} running` : undefined} fold="open">
+      {!demo && <PanelStatus loading={res.loading} error={res.error} what="agents" />}
+      {(demo || res.data) && tasks.length === 0 && <Empty>Say “in jarvis, add …” to start one</Empty>}
+      <ul className="agents">
+        {tasks.map((t) => (
+          <li key={t.id} className={"agent s-" + t.state}>
+            <div className="agent-head">
+              <span className="agent-project">{t.project}</span>
+              <span className={"agent-badge " + t.state}>{t.state}</span>
+              <span className="agent-time">{elapsed(t, now)}</span>
+            </div>
+            <div className="agent-instr" title={t.instruction}>{t.instruction}</div>
+            {t.state === "done" ? (
+              <div className="agent-step">{[t.diffstat, t.branch].filter(Boolean).join(" · ")}</div>
+            ) : t.state === "failed" || t.state === "cancelled" ? (
+              (t.summary ?? t.last_step) && (
+                <div className="agent-step err" title={t.summary ?? t.last_step ?? ""}>{t.summary ?? t.last_step}</div>
+              )
+            ) : (
+              t.last_step && <div className="agent-step">{t.last_step}</div>
+            )}
+          </li>
+        ))}
+      </ul>
     </Panel>
   );
 }

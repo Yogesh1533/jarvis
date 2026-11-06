@@ -1044,6 +1044,12 @@ async def lifespan(_app):
     tools.add_listener(hub.on_tool)
     settings.add_listener(hub.on_settings)
     hud_bridge.attach(hub.to_hud)
+    hud_bridge.attach_announcer(hub.announce)
+    try:
+        from .tools import dev
+        dev.sweep_stale()   # agents marked running died with the last process
+    except Exception as exc:  # noqa: BLE001
+        print("[hud] dev task sweep failed: {}".format(exc))
     reminders.start_scheduler(lambda msg: hub.announce("reminder", "Reminder: " + msg))
     timers.set_notifier(lambda label: hub.announce("timer", "Your {} is done.".format(label)))
     recall.warm()   # embedder + index catch-up, off the main thread
@@ -1230,6 +1236,13 @@ def api_tasks():
     from .tools import tasks
 
     return _safe(tasks.rows)
+
+
+@app.get("/api/devtasks")
+def api_devtasks():
+    from .tools import dev
+
+    return _safe(lambda: dev.rows(today_only=True))
 
 
 class TaskIn(BaseModel):

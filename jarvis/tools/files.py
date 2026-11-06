@@ -14,8 +14,19 @@ _TEXT_SUFFIXES = {
 }
 
 
+def _vault_blocked(p):
+    """True for paths in the vault's excluded folders (People, Life, ...)."""
+    from . import vault
+    try:
+        return vault.is_excluded(p)
+    except Exception:  # noqa: BLE001 — privacy gate: fail closed on any error
+        return True
+
+
 def _allowed(path):
     p = Path(path).expanduser().resolve()
+    if _vault_blocked(p):
+        raise PermissionError("{} is in a private vault folder Jarvis doesn't open.".format(p.name))
     for root in config.FILES_ROOTS:
         try:
             p.relative_to(root)
@@ -69,6 +80,8 @@ def search(query, max_results=15):
                     score[h] = score.get(h, 0) + (2 if w in name else 1)
     # Keep only files matching more than one word, or a word in their name.
     close = sorted((h for h in score if score[h] >= 2), key=lambda h: (-score[h], h))
+    exact = [h for h in exact if not _vault_blocked(Path(h))]
+    close = [h for h in close if not _vault_blocked(Path(h))]
     if not exact and not close:
         return "No files match {!r}.".format(query)
     out = exact[:max_results]

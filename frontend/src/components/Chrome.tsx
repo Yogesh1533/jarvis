@@ -424,6 +424,7 @@ const WAKE: { id: "low" | "normal" | "high"; label: string; note: string }[] = [
   { id: "high", label: "Sensitive", note: "Hears you from across the room, sometimes wakes by mistake" },
 ];
 
+const WRAP_TIMES = ["17:00", "18:00", "19:00", "20:00", "21:00", "22:00"];
 const BRIEFING_TIMES = ["06:00", "06:30", "07:00", "07:30", "08:00", "08:30", "09:00", "09:30", "10:00"];
 
 function timeOfDay(hhmm: string) {
@@ -605,9 +606,19 @@ export function SettingsDrawer() {
             ))}
           </select>
         </label>
+        <label className="select-row">
+          <span>Evening wrap</span>
+          <select value={server.wrap} onChange={(e) => setServer({ wrap: e.target.value })}>
+            <option value="off">Off</option>
+            {[...new Set([...WRAP_TIMES, server.wrap])].filter((t) => t !== "off").sort().map((t) => (
+              <option key={t} value={t}>From {timeOfDay(t)}</option>
+            ))}
+          </select>
+        </label>
+        <Toggle label="Write wrap to vault" on={server.wrap_to_vault} onChange={() => setServer({ wrap_to_vault: !server.wrap_to_vault })} />
         <p className="fine">
           {config && !config.google ? "Meeting alerts need Google connected. " : ""}
-          The briefing plays the first time you're at your Mac after that time, before noon: weather, your first meetings and important email.
+          The briefing plays the first time you're at your Mac after that time, before noon: weather, your first meetings and important email. The evening wrap plays once after its time: what got done, tomorrow, and emails that may need a reply, saved to today's daily note.
         </p>
       </fieldset>
 

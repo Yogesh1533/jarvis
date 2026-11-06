@@ -4,7 +4,20 @@ import type { FaceId } from "../faces/types";
 import type { ThemeId } from "./themes";
 
 export type Mode = "boot" | "idle" | "listening" | "thinking" | "speaking" | "confirm";
-export type Panel = "agenda" | "mail" | "tasks" | "reminders" | "timers" | "memory" | "system" | "media" | "skills";
+export type Panel = "agenda" | "mail" | "tasks" | "reminders" | "timers" | "memory" | "system" | "media" | "skills" | "agents";
+export interface DevTask {
+  id: number;
+  project: string;
+  instruction: string;
+  branch: string | null;
+  state: "running" | "done" | "failed" | "cancelled";
+  started_at: string;
+  finished_at: string | null;
+  last_step: string | null;
+  summary: string | null;
+  diffstat: string | null;
+}
+
 export type Layout = "full" | "orb";
 
 export interface LogEntry {
@@ -74,6 +87,8 @@ export interface ServerSettings {
   conversation: "brief" | "open";
   meeting_alerts: "off" | "5" | "10" | "15";
   briefing: string; // "off" or "HH:MM"
+  wrap: string; // "off" or "HH:MM"
+  wrap_to_vault: boolean;
   fillers: boolean;
   speak: boolean;
   auto_mood: boolean;
@@ -150,7 +165,7 @@ function loadLocal(): LocalSettings {
 
 const SERVER_DEFAULTS: ServerSettings = {
   theme: "arc", mood: "classic", voice: "", patience: "balanced",
-  barge_in: true, wake: "normal", conversation: "open", meeting_alerts: "5", briefing: "07:00", fillers: true, speak: true, auto_mood: false, edge: "playful", banter: true, nudges: true, model: "",
+  barge_in: true, wake: "normal", conversation: "open", meeting_alerts: "5", briefing: "07:00", wrap: "off", wrap_to_vault: true, fillers: true, speak: true, auto_mood: false, edge: "playful", banter: true, nudges: true, model: "",
 };
 
 let seq = 1;
@@ -177,6 +192,8 @@ interface State {
   server: ServerSettings;
   persona: Persona;
   refresh: Record<Panel, number>;
+  /** Fake coding-agent rows shown by the Agents panel during the scripted demo. */
+  demoDevtasks: DevTask[] | null;
   drawer: "history" | "settings" | "skills" | null;
   palette: boolean;
 
@@ -213,7 +230,8 @@ export const useStore = create<State>((set, get) => ({
   local: loadLocal(),
   server: SERVER_DEFAULTS,
   persona: { moods: {}, voices: {}, voice: "", models: {}, default_model: "" },
-  refresh: { agenda: 0, mail: 0, tasks: 0, reminders: 0, timers: 0, memory: 0, system: 0, media: 0, skills: 0 },
+  refresh: { agenda: 0, mail: 0, tasks: 0, reminders: 0, timers: 0, memory: 0, system: 0, media: 0, skills: 0, agents: 0 },
+  demoDevtasks: null,
   drawer: null,
   palette: false,
 

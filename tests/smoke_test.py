@@ -687,6 +687,27 @@ out, err = tools.execute("assistant_set_preference", {"setting": "patience", "va
 check("patience is voice-controllable", not err and settings.get()["patience"] == "patient")
 out, err = tools.execute("assistant_set_preference", {"setting": "barge_in", "value": "off"}, confirm=NO)
 check("'off' turns a toggle off", settings.get()["barge_in"] is False)
+pref_schema = next(t for t in tools.TOOL_SCHEMAS if t["name"] == "assistant_set_preference")
+pref_enum = pref_schema["input_schema"]["properties"]["setting"]["enum"]
+check("wrap and wrap_to_vault are in the preference enum", "wrap" in pref_enum and "wrap_to_vault" in pref_enum)
+check("preference description explains wrap and wrap_to_vault",
+      "wrap:" in pref_schema["description"] and "wrap_to_vault:" in pref_schema["description"])
+check("every preference in the enum is a real setting", all(k in settings.DEFAULTS for k in pref_enum))
+out, err = tools.execute("assistant_set_preference", {"setting": "wrap", "value": "20:00"}, confirm=NO)
+check("wrap time is voice-controllable", not err and settings.get()["wrap"] == "20:00")
+out, err = tools.execute("assistant_set_preference", {"setting": "wrap", "value": "off"}, confirm=NO)
+check("wrap can be turned off by voice", not err and settings.get()["wrap"] == "off")
+out, err = tools.execute("assistant_set_preference", {"setting": "wrap_to_vault", "value": "off"}, confirm=NO)
+check("wrap_to_vault 'off' is boolean False", not err and settings.get()["wrap_to_vault"] is False
+      and "off" in out)
+out, err = tools.execute("assistant_set_preference", {"setting": "wrap_to_vault", "value": "on"}, confirm=NO)
+check("wrap_to_vault 'on' is boolean True", not err and settings.get()["wrap_to_vault"] is True
+      and "on" in out)
+try:
+    settings.update(wrap_to_vault="maybe")
+    check("an unclear on/off value is rejected, not read as off", False)
+except ValueError:
+    check("an unclear on/off value is rejected, not read as off", settings.get()["wrap_to_vault"] is True)
 
 hud_bridge.attach(None)
 out, _ = tools.execute("hud_show_card", {"title": "Mars", "items": [{"title": "Moons", "value": "2"}]}, confirm=NO)

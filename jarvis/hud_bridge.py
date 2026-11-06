@@ -17,3 +17,21 @@ def send(event):
     if fn is None:
         return False
     return bool(fn(event))
+
+
+# Something that can tell the user about a finished background job (speak it
+# when they're nearby, show a card). The assistant hub attaches it; without
+# one, announce() falls back to a plain HUD notify event.
+_announcer = [None]
+
+
+def attach_announcer(fn):
+    """fn(kind, text, speak) -> bool."""
+    _announcer[0] = fn
+
+
+def announce(kind, text, speak=True):
+    fn = _announcer[0]
+    if fn is not None:
+        return bool(fn(kind, text, speak))
+    return send({"type": "notify", "kind": kind, "text": text})

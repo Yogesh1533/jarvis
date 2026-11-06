@@ -14,7 +14,7 @@ import {
 import { CommandPalette, HearingLine, HoloCards, OrbBar } from "./components/Extras";
 import { HomeBrief, ModelSwitch, QuickActions, SkillsDrawer, SkillsShelf, useIsHome } from "./components/Home";
 import {
-  AgendaPanel, BrainPanel, MailPanel, MediaPanel, MemoryPanel, SystemPanel, TasksPanel, TimersPanel,
+  AgendaPanel, AgentsPanel, BrainPanel, MailPanel, MediaPanel, MemoryPanel, SystemPanel, TasksPanel, TimersPanel,
 } from "./components/Panels";
 
 // The server owns the state machine; until the boot sequence finishes we
@@ -104,6 +104,9 @@ function handle(msg: ServerMsg) {
         const panels = panelsForTool(msg.name);
         if (panels.length) s.bump(...panels);
       }
+      break;
+    case "devtask":
+      s.bump("agents");
       break;
     case "brain": {
       const { type: _t, ...turn } = msg;
@@ -286,6 +289,7 @@ export default function App() {
         <div className="col col-left">
           <AgendaPanel />
           <TasksPanel />
+          <AgentsPanel />
           <TimersPanel />
         </div>
         <div className="center">

@@ -189,6 +189,119 @@ The enforcement lives in `jarvis/tools/__init__.py`:
 If the user declines, the tool returns a "user declined, do not retry"
 result to the model, which reports back and moves on.
 
+## Coding agents (`tools/dev.py`)
+
+This runs model-written code on the Mac with Yogesh's user rights, so read
+this section before changing it.
+
+**Flow.** `dev_task_start(project, instruction)` resolves the project to a
+git repo under `DEV_ROOTS` (`Projects.md` rows first, then folder names) and
+**always confirms** ("Start a coding agent in jarvis on branch
+jarvis/dark-mode-a1b2 to: …?"). On approval it makes a **standalone clone**
+at `<first DEV_ROOT>/.jarvis-worktrees/<project>-<id>` (the DB field is still
+called `worktree`): `git clone --shared --no-checkout`, which borrows the
+repo's objects read-only through alternates (never `--local`, whose
+hardlinked objects could be edited in place), removes `origin`, and checks
+out `jarvis/<slug>-<4 hex>` at the repo's current HEAD. The main checkout,
+its branch, refs, config and object store are not touched. A daemon thread
+runs `sdk_runner`: `claude_agent_sdk.query()` with `cwd` = the clone,
+`permission_mode="acceptEdits"`, tools limited to Read, Edit, Write, Glob,
+Grep and Bash, `setting_sources=["project"]` (the repo's CLAUDE.md and
+`.claude/`, never `~/.claude` settings, hooks, plugins, skills or MCP
+servers), `max_turns` 40, a 20-minute wall clock and model
+`DEV_AGENT_MODEL`. The system prompt tells it to commit on its branch and
+never push. Each tool call updates `last_step` and sends a `devtask` HUD
+event.
+
+**Bringing the work back.** When the agent ends (done, failed or
+cancelled, and for stale tasks at startup), Jarvis imports the branch
+itself. It never runs git with the clone's `.git` as the repository: it
+copies the clone's object files and the branch ref (read as plain files)
+into a fresh snapshot git dir that it writes, with its own config and the
+main repo's objects as alternates. Then it runs `git fetch` in the main
+repo from that snapshot with a non-forced refspec. So nothing the agent
+planted in the clone's `.git` (config with `core.fsmonitor` or filters,
+`commondir`, hooks, a `.git` file pointing elsewhere) ever runs. Every git
+call Jarvis makes also passes `-c core.fsmonitor=false -c
+core.hooksPath=/dev/null` and drops inherited `GIT_*` env vars. Diffstat
+(`<base>...<branch>`) and the commit list are computed in the main repo.
+The result is announced, and spoken only if the Mac was used in the last
+ten minutes. Errors, timeouts and crashes end as `failed` with a reason
+and are announced the same way. At most `DEV_AGENT_MAX_RUNNING` (2) run at
+once. `dev_task_cancel` stops an agent and keeps its branch.
+`dev_task_cleanup` deletes a finished task's clone folder. It does that
+only if the folder sits directly in `.jarvis-worktrees`, the clone's
+branch is already in the main repo at the same commit, and there are no
+uncommitted changes. That check never runs `git status` on the clone: a
+Jarvis-owned snapshot gets a fresh index from the committed tree, and
+`git ls-files -m -d -o` compares content with no global or system config
+(`STRICT_GIT` plus `GIT_CONFIG_GLOBAL=/dev/null`, `GIT_CONFIG_NOSYSTEM=1`),
+so no filter, textconv or hook can be defined, and git never recurses
+into a nested repo the agent made. Gitlinks are compared by commit only,
+so a dirty nested repo inside the clone doesn't block cleanup. The branch
+is always kept.
+
+**The boundary is the confirmation, the clone and the OS sandbox.**
+
+1. *Confirmation.* Nothing runs until Yogesh approves the exact project,
+   branch and instruction on screen or by voice.
+2. *Clone.* The agent's cwd is a throwaway clone with no remote. The repo's
+   objects are reachable only read-only.
+3. *OS sandbox.* Bash runs in Claude Code's sandbox (Seatbelt on macOS) with
+   `allowUnsandboxedCommands=False`. Writes are limited to the clone (plus
+   the temp dirs, which the sandbox always allows), minus the clone's
+   `.claude/`, `.git/config` and `.git/hooks`. Reads are denied for
+   `~/.secrets`, `~/.ssh`, `~/Library/Keychains`, `~/.aws`, `~/.config/gh`,
+   `~/.gnupg`, `~/.netrc`, Jarvis's `.env`, `credentials.json` and `data/`,
+   the repo's top-level `.env*` files, and Yogesh's private data: iCloud
+   Drive (`~/Library/Mobile Documents`, which holds the vault), the vault
+   at `VAULT_DIR` wherever it is, Google Drive (`~/Library/CloudStorage`),
+   `~/Media`, `~/Library/Mail`, `~/Library/Messages`, `~/Library/Cookies`,
+   Safari, Chrome, Firefox, Brave and Arc profiles, and Claude session
+   transcripts (`~/.claude/projects`; the rest of `~/.claude` stays
+   readable because Bash sources the CLI's shell snapshot from there).
+   Network is limited to the package registries and GitHub
+   (`REGISTRY_DOMAINS`) so installs work.
+4. Secret-looking env vars (`*_KEY`, `*_TOKEN`, ... including any
+   `CLAUDE_CODE_OAUTH_TOKEN`) are blanked for the agent. The CLI logs in
+   from the keychain.
+
+**The guard is best-effort.** `guard()` runs on every tool call through a
+PreToolUse hook (which fires even for calls `acceptEdits` auto-approves)
+and again in `can_use_tool`. It keeps file tools inside the clone, off
+`.git`, the repo's `.claude/` settings and secret-looking files. It also
+pattern-matches Bash for `git push`/`remote`/branch switching, `gh`,
+`ssh`/`scp`/`rsync`/`sudo`/`brew`, global installs, pipes into a shell,
+`rm -rf /` or `~`, and paths outside the clone. It is string matching, and
+a determined agent gets around it (command substitution, variables,
+scripts, `python -c` with `subprocess`). That's why the controls above
+don't depend on it. File tools (Edit/Write) aren't sandboxed, so for them
+the guard is the only path check.
+
+**Residual risks.**
+
+- Exfiltration: sandboxed code can still read anything outside the deny
+  list that Yogesh can read (other repos under `~/Developer`, `~/Documents`,
+  `~/Desktop`, `~/Downloads`, app data not listed above, nested `.env`
+  files in the main repo) and send it to an allowed domain. **github.com
+  is allowed**, so an agent can push data to any GitHub repo over HTTPS;
+  the guard's `push` rule is string matching and doesn't stop that. That
+  is a deliberate trade-off for installs from GitHub. The sandbox supports
+  a stronger shape (`denyRead: ["~"]` with `filesystem.allowRead` for the
+  clone and toolchain caches, which takes precedence over `denyRead`); it
+  isn't used yet because each project's toolchain paths would need tuning.
+- Git calls Jarvis makes against the clone (snapshot, import, the cleanup
+  check) use `STRICT_GIT`. `_make_clone` uses normal config, but it runs
+  before the agent starts, on the repo's own content.
+- The temp dirs are writable, so `DEV_ROOTS` must not be under `/tmp`.
+- Anything the agent commits runs when Yogesh later runs that branch's code
+  or tests. Review the branch before running or merging it.
+- The CLI process itself isn't sandboxed. It appears to still read
+  `~/.claude/CLAUDE.md` (instructions only), and it keeps its bookkeeping
+  in the clone's `.claude/`.
+
+Nothing is merged or pushed. The work sits on its branch for review.
+
 ## Three LLM backends
 
 With `LLM_BACKEND=nebius`:

@@ -47,6 +47,7 @@ export function panelsForTool(name: string): Panel[] {
   if (name.startsWith("reminder_")) return ["reminders"];
   if (name.startsWith("timer_")) return ["timers"];
   if (name.startsWith("memory_")) return ["memory"];
+  if (name.startsWith("dev_task_")) return ["agents"];
   if (name.startsWith("skill_")) return ["skills"];
   if (name.startsWith("calendar_")) return ["agenda"];
   if (name.startsWith("gmail_")) return ["mail"];

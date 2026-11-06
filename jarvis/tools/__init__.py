@@ -688,6 +688,114 @@ TOOL_SCHEMAS = [
             "required": ["path"],
         },
     },
+    # ── Brain vault & projects ─────────────────────────────────────
+    {
+        "name": "wrap_get",
+        "description": (
+            "Gather the evening wrap in one call: tasks done today, what's due "
+            "tomorrow, today's commits, finished coding agents, tomorrow's calendar "
+            "and emails that may need a reply. Use for 'wrap up my day', 'how did today go'."
+        ),
+        "input_schema": {"type": "object", "properties": {}},
+    },
+    {
+        "name": "vault_search",
+        "description": (
+            "Search the user's Obsidian vault (their notes / brain) by title and "
+            "content. Returns note paths with snippets; read one with vault_read."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "query": {"type": "string"},
+                "max_results": {"type": "integer", "description": "Default 8"},
+            },
+            "required": ["query"],
+        },
+    },
+    {
+        "name": "vault_read",
+        "description": "Read a note from the vault (path relative to the vault, from vault_search).",
+        "input_schema": {
+            "type": "object",
+            "properties": {"path": {"type": "string"}},
+            "required": ["path"],
+        },
+    },
+    {
+        "name": "vault_note",
+        "description": (
+            "Jot something into the vault. Append-only: adds to today's daily note "
+            "by default, or creates a new note in the inbox when where is 'inbox'."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "text": {"type": "string"},
+                "where": {"type": "string", "enum": ["daily", "inbox"], "description": "Default daily"},
+                "title": {"type": "string", "description": "Title for an inbox note"},
+                "section": {"type": "string", "description": "Optional heading to add the text under (daily)"},
+            },
+            "required": ["text"],
+        },
+    },
+    {
+        "name": "dev_task_start",
+        "description": (
+            "Start a background coding agent in one of the user's repos, in its own git "
+            "worktree and branch. Always asks the user first."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "project": {"type": "string", "description": "Project or repo folder name"},
+                "instruction": {"type": "string", "description": "What the agent should change"},
+            },
+            "required": ["project", "instruction"],
+        },
+    },
+    {
+        "name": "dev_task_status",
+        "description": "Status of a coding task (the latest if no id is given).",
+        "input_schema": {
+            "type": "object",
+            "properties": {"task_id": {"type": "string"}},
+        },
+    },
+    {
+        "name": "dev_task_list",
+        "description": "List today's and running coding tasks.",
+        "input_schema": {"type": "object", "properties": {}},
+    },
+    {
+        "name": "dev_task_cancel",
+        "description": "Stop a running coding task. Its worktree and branch are kept.",
+        "input_schema": {
+            "type": "object",
+            "properties": {"task_id": {"type": "string"}},
+            "required": ["task_id"],
+        },
+    },
+    {
+        "name": "dev_task_cleanup",
+        "description": "Remove a finished coding task's worktree folder. The branch is kept.",
+        "input_schema": {
+            "type": "object",
+            "properties": {"task_id": {"type": "string"}},
+            "required": ["task_id"],
+        },
+    },
+    {
+        "name": "projects_status",
+        "description": (
+            "Status of the user's coding projects from their Projects dashboard "
+            "plus read-only git info. Give a project name for one, or omit for all."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {"project": {"type": "string"}},
+        },
+    },
     # ── Jarvis's voice & behaviour ─────────────────────────────────
     {
         "name": "voice_set_mood",
@@ -745,7 +853,9 @@ TOOL_SCHEMAS = [
             "meeting_alerts: off|5|10|15 minutes of warning before calendar "
             "events. briefing: off or a time like 07:30 for the spoken morning "
             "briefing (it plays the first time the user is at their Mac after "
-            "that time, before noon)."
+            "that time, before noon). wrap: off or a time like 20:00 for the "
+            "spoken evening wrap. wrap_to_vault: on|off, write the evening wrap "
+            "into today's daily note."
         ),
         "input_schema": {
             "type": "object",
@@ -755,6 +865,7 @@ TOOL_SCHEMAS = [
                     "enum": [
                         "patience", "barge_in", "fillers", "speak", "auto_mood", "edge", "banter",
                         "nudges", "theme", "wake", "conversation", "meeting_alerts", "briefing",
+                        "wrap", "wrap_to_vault",
                     ],
                 },
                 "value": {"type": "string", "description": "New value; 'on'/'off' for switches"},
@@ -845,8 +956,9 @@ def _handlers():
     # Imported lazily so text mode starts even if e.g. Google libs are
     # missing; a broken dependency surfaces as a tool error, not a crash.
     from . import (
-        apple, briefing, files, gcal, gmail, hud, mac, media, memory, persona,
-        prep, recall, reminders, screen, skills, system, tasks, timers, weather, websearch,
+        apple, briefing, dev, files, gcal, gmail, hud, mac, media, memory, persona,
+        prep, projects, recall, reminders, screen, skills, system, tasks, timers, vault,
+        weather, websearch, wrap,
     )
 
     return {
@@ -906,6 +1018,16 @@ def _handlers():
         "files_search": files.search,
         "files_read": files.read,
         "files_open": files.open_file,
+        "vault_search": vault.search,
+        "vault_read": vault.read,
+        "vault_note": vault.note,
+        "projects_status": projects.status,
+        "wrap_get": wrap.get,
+        "dev_task_start": dev.start,
+        "dev_task_status": dev.status,
+        "dev_task_list": dev.list_tasks,
+        "dev_task_cancel": dev.cancel,
+        "dev_task_cleanup": dev.cleanup,
         "voice_set_mood": persona.set_mood,
         "voice_set_voice": persona.set_voice,
         "assistant_set_model": persona.set_model,

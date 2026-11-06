@@ -48,7 +48,7 @@ def _get(conn, task_id):
 def complete(task_id):
     with connect() as conn:
         row = _get(conn, task_id)
-        conn.execute("UPDATE tasks SET done = 1 WHERE id = ?", (task_id,))
+        conn.execute("UPDATE tasks SET done = 1, done_at = datetime('now', 'localtime') WHERE id = ?", (task_id,))
     return "Task {} marked done: {}".format(task_id, row["title"])
 
 

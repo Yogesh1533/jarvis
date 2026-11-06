@@ -109,6 +109,29 @@ FILES_ROOTS = [
     if p.strip()
 ]
 
+# Obsidian "Brain" vault: Jarvis searches, reads and appends to it. Folders in
+# VAULT_EXCLUDE (first path part, relative to the vault) are never touched.
+VAULT_DIR = Path(os.path.expanduser(os.getenv(
+    "VAULT_DIR", "~/Library/Mobile Documents/com~apple~CloudDocs/Obsidian/Brain",
+)))
+VAULT_EXCLUDE = [
+    p.strip() for p in os.getenv("VAULT_EXCLUDE", ".obsidian,.trash,Templates,People,Life").split(",")
+    if p.strip()
+]
+
+# Code folders coding agents may work in (comma-separated)
+DEV_ROOTS = [
+    Path(os.path.expanduser(p.strip())).resolve()
+    for p in os.getenv("DEV_ROOTS", "~/Developer").split(",")
+    if p.strip()
+]
+# Coding agents (dev_task_*): model, turn cap, wall-clock timeout (minutes)
+# and how many may run at once
+DEV_AGENT_MODEL = os.getenv("DEV_AGENT_MODEL", "sonnet")
+DEV_AGENT_MAX_TURNS = int(_float("DEV_AGENT_MAX_TURNS", 40))
+DEV_AGENT_TIMEOUT_MIN = _float("DEV_AGENT_TIMEOUT_MIN", 20)
+DEV_AGENT_MAX_RUNNING = int(_float("DEV_AGENT_MAX_RUNNING", 2))
+
 # Semantic recall: a small local embedding model (ONNX, CPU). The cache lives
 # outside the project because the project sits in iCloud, which evicts files.
 EMBED_MODEL = os.getenv("EMBED_MODEL", "BAAI/bge-small-en-v1.5")
