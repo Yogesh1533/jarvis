@@ -382,10 +382,10 @@ _today = _dt.now().astimezone().replace(second=0, microsecond=0)
 _at = lambda h, m=0: (_today + _td(days=1)).replace(hour=h, minute=m).isoformat()  # noqa: E731
 _events = [
     {"summary": "Standup", "start": {"dateTime": _at(9)}, "end": {"dateTime": _at(9, 15)}},
-    {"summary": "Digipearl roadmap", "start": {"dateTime": _at(14)}, "end": {"dateTime": _at(15)},
+    {"summary": "Acme roadmap", "start": {"dateTime": _at(14)}, "end": {"dateTime": _at(15)},
      "location": "Zoom", "description": "Q4 priorities and the AI pilot",
      "attendees": [{"email": "me@gmail.com", "self": True},
-                   {"email": "sara@digipearl.com.au", "displayName": "Sara Lee"},
+                   {"email": "sara@acme.example", "displayName": "Sara Lee"},
                    {"email": "room@resource.calendar.google.com", "resource": True}]},
 ]
 _list_calls = []
@@ -401,16 +401,16 @@ _real = (gcal._service, gmail.search, websearch.search)
 gcal._service = lambda: SimpleNamespace(events=lambda: _Events())
 _searches = []
 gmail.search = lambda q, n=10: _searches.append(q) or "from: Sara Lee\nsubject: AI pilot budget\nsnippet: can we cap it at 20k?"
-websearch.search = lambda q, n=5: "Digipearl: Sydney digital agency"
-check("prep: '2pm' finds the 14:00 meeting", prep.find_event("my 2pm", 48)["summary"] == "Digipearl roadmap")
-check("prep: title words find it", prep.find_event("the digipearl one", 48)["summary"] == "Digipearl roadmap")
+websearch.search = lambda q, n=5: "Acme: Sydney digital agency"
+check("prep: '2pm' finds the 14:00 meeting", prep.find_event("my 2pm", 48)["summary"] == "Acme roadmap")
+check("prep: title words find it", prep.find_event("the acme one", 48)["summary"] == "Acme roadmap")
 check("prep: no hint takes the next one", prep.find_event(None, 48)["summary"] == "Standup")
 check("prep: a bare number is not a time", prep._wanted_time("3 people") is None)
 out = tools.execute("meeting_prep", {"meeting": "2pm", "hours_ahead": 48}, lambda p: False)[0]
-check("prep: dossier names meeting and attendee", "Digipearl roadmap" in out and "Sara Lee" in out)
+check("prep: dossier names meeting and attendee", "Acme roadmap" in out and "Sara Lee" in out)
 check("prep: self and room resources skipped", "me@gmail.com" not in out and "resource" not in out)
-check("prep: email searched per attendee", any("sara@digipearl.com.au" in q for q in _searches))
-check("prep: company looked up from a work domain", "About digipearl.com.au" in out)
+check("prep: email searched per attendee", any("sara@acme.example" in q for q in _searches))
+check("prep: company looked up from a work domain", "About acme.example" in out)
 check("prep: email thread included", "AI pilot budget" in out)
 check("prep: agenda included", "Q4 priorities" in out)
 check("prep: tells the model to show a card", "hud_show_card" in out)
@@ -428,16 +428,16 @@ def _fake_post(url, json=None, headers=None, timeout=None):
     if url.endswith("/extract"):
         body = {"results": [{"url": json["urls"][0], "raw_content": "Clean article text."}]}
     else:
-        body = {"answer": "Digipearl is a Sydney agency.", "results": [
-            {"title": "Digipearl", "url": "https://digipearl.com.au", "content": "Digital agency",
+        body = {"answer": "Acme is a Sydney agency.", "results": [
+            {"title": "Acme", "url": "https://acme.example", "content": "Digital agency",
              "score": 0.91, "published_date": "2026-10-20T09:00:00Z"}]}
     return SimpleNamespace(json=lambda: body, raise_for_status=lambda: None)
 
 
 _real_post, requests.post = requests.post, _fake_post
 config.TAVILY_API_KEY = "tvly-test"
-out = websearch.search("digipearl", 3)
-check("tavily: search returns answer and result", "Summary: Digipearl is a Sydney agency." in out and "digipearl.com.au" in out)
+out = websearch.search("acme", 3)
+check("tavily: search returns answer and result", "Summary: Acme is a Sydney agency." in out and "acme.example" in out)
 check("tavily: key sent as bearer, not in the body",
       _posts[-1][2]["Authorization"] == "Bearer tvly-test" and "api_key" not in _posts[-1][1])
 check("tavily: news asks for the news topic", "2026-10-20" in websearch.news("AI") and _posts[-1][1]["topic"] == "news")

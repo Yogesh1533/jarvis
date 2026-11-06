@@ -40,7 +40,7 @@ CASES = [
     ("what's on my task list", {"task_list"}, "main"),
     ("what's on my calendar tomorrow", {"calendar_list_events", "briefing_get"}, "main"),
     ("search my email for anything from the university", {"gmail_search"}, "main"),
-    ("draft a reply to sara@digipearl.com.au saying I'll be there", {"gmail_create_draft"}, "main"),
+    ("draft a reply to sara@acme.example saying I'll be there", {"gmail_create_draft"}, "main"),
     ("what's the weather in Sydney", {"weather_get"}, "main"),
     ("play Sajjan Raj Vaidya on YouTube Music", {"music_search_youtube"}, "fast"),
     ("remember that my sister's birthday is March 3rd", {"memory_save"}, "main"),

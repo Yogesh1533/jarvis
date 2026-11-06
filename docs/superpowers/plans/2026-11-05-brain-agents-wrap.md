@@ -30,7 +30,7 @@
 ## Review Focus
 
 1. **iCloud evicted (dataless) notes:** reading a vault note that isn't downloaded yet must not hang search for minutes. `vault_search` skips files it can't open within the read, using a size/`OSError` guard, and keeps going. Test in Task 1.
-2. **Unicode and spaces in vault paths** (`00 Inbox`, `Digipearl/Café.md`): read and note must round-trip them. Test in Task 1.
+2. **Unicode and spaces in vault paths** (`00 Inbox`, `Acme/Café.md`): read and note must round-trip them. Test in Task 1.
 3. **Proactive state clobbering:** `_briefing` currently overwrites `proactive.json` with only `{"briefing": ...}`, which would wipe the wrap date and replay the wrap. State writes must merge. Test in Task 9.
 4. **A dirty or detached main repo** when an agent starts: creating the worktree must not change the main checkout's files or branch. Test in Task 5.
 5. **An agent that hangs or crashes mid-run:** the task must end in `failed` with a reason and get announced, never stay stuck in `running`. Test in Task 6.
@@ -53,13 +53,13 @@
   - `vault.read(path: str) -> str`
   - `vault.note(text: str, where: str = "daily", title: str | None = None, section: str | None = None, _now: datetime | None = None) -> str`. Returns `"Added to Daily/2026-11-05.md"` or `"Created 00 Inbox/<file>"`. `_now` is for tests only (stripped from model input anyway).
 
-- [ ] **Step 1: Write the failing tests** in `tests/vault_test.py`. Build a temp vault with `Daily/`, `Templates/Daily.md` (the real template text: frontmatter `created: {{date}}`, `# {{date}}`, `## Notes / brain dump` last), `People/secret.md`, `Projects.md`, `Digipearl/Café brief.md` ("logo due Friday") and `00 Inbox/`. Then set `config.VAULT_DIR` and `config.VAULT_EXCLUDE = [".obsidian", ".trash", "Templates", "People", "Life"]`. Checks:
+- [ ] **Step 1: Write the failing tests** in `tests/vault_test.py`. Build a temp vault with `Daily/`, `Templates/Daily.md` (the real template text: frontmatter `created: {{date}}`, `# {{date}}`, `## Notes / brain dump` last), `People/secret.md`, `Projects.md`, `Acme/Café brief.md` ("logo due Friday") and `00 Inbox/`. Then set `config.VAULT_DIR` and `config.VAULT_EXCLUDE = [".obsidian", ".trash", "Templates", "People", "Life"]`. Checks:
   - `"Café brief" in vault.search("logo")`
   - a title hit ranks first: search `"projects"` → the first result line contains `Projects.md`
   - the whole phrase misses but the words hit: `vault.search("friday logo")` finds the Café note
   - `"secret" not in vault.search("secret")` and `vault.read("People/secret.md")` raises `ValueError`
   - `vault.read("../outside.md")` and a symlink `Daily/link.md → /tmp/x.md` both raise `ValueError`
-  - `vault.read("Digipearl/Café brief.md")` contains `"logo due Friday"`
+  - `vault.read("Acme/Café brief.md")` contains `"logo due Friday"`
   - `note("call Sam", _now=datetime(2026,11,5,9,30))` creates `Daily/2026-11-05.md` with `created: 2026-11-05`, and `- 09:30 call Sam` sits after `## Notes / brain dump`
   - a second `note("buy cable", ...)` adds to the end of that section and the earlier content is byte-for-byte kept as a prefix
   - `note("line1\nline2", section="Wrap", _now=...20:00)` adds `## Wrap 20:00\nline1\nline2` at the end, and calling it twice gives two `## Wrap` blocks

@@ -424,7 +424,7 @@ TOOL_SCHEMAS = [
             "title, or the next one), who's attending, recent email with them, what you "
             "remember about them, and a web look at their organisation. Use for 'prep me "
             "for my 2pm', 'brief me on my next meeting', 'what do I need to know for the "
-            "Digipearl meeting'. Afterwards show a hud_show_card (who, context, open "
+            "Acme meeting'. Afterwards show a hud_show_card (who, context, open "
             "threads, talking points) and speak a 2-3 sentence summary."
         ),
         "input_schema": {
